@@ -481,6 +481,43 @@ let overlaySettings = {
 
 
 
+function getGeneralFilterWords() {
+
+    return String(generalSettings.messageFilterWords || "")
+        .split(/[\s,;]+/)
+        .map(word => word.trim().toLowerCase())
+        .filter(Boolean);
+}
+
+function messageMatchesGeneralFilter(text) {
+
+    if (!generalSettings.messageFilterEnabled) {
+        return false;
+    }
+
+    const words = getGeneralFilterWords();
+
+    if (!words.length) {
+        return false;
+    }
+
+    const lowerText = String(text || "").toLowerCase();
+    return words.some(word => lowerText.includes(word));
+}
+
+function removeFilteredMessages() {
+
+    if (!chat) {
+        return;
+    }
+
+    chat.querySelectorAll(".message[data-filter-text]").forEach((element) => {
+        if (messageMatchesGeneralFilter(element.dataset.filterText || "")) {
+            element.remove();
+        }
+    });
+}
+
 function applyGeneralSettings(settings) {
 
     if (
@@ -494,6 +531,8 @@ function applyGeneralSettings(settings) {
         ...generalSettings,
         ...settings
     };
+
+    removeFilteredMessages();
 }
 
 function applyOverlaySettings(settings) {
@@ -871,6 +910,10 @@ function addMessage(message) {
             message.message || ""
         );
 
+    if (messageMatchesGeneralFilter(messageText)) {
+        return;
+    }
+
     if (
         generalSettings.hideEmptyMessages &&
         messageText.trim() === ""
@@ -883,6 +926,7 @@ function addMessage(message) {
 
     messageElement.className =
         "message";
+    messageElement.dataset.filterText = messageText;
 
     applyMessageEnterAnimation(
         messageElement
@@ -945,16 +989,9 @@ function addMessage(message) {
         "Unknown";
 
     username.style.color =
-        overlaySettings.usernameColorMode === "custom"
-            ? (
-                overlaySettings.usernameColor ||
-                "#ffffff"
-            )
-            : (
-                message.color ||
-                overlaySettings.usernameColor ||
-                "#ffffff"
-            );
+        overlaySettings.usernameColor ||
+        message.color ||
+        "#ffffff";
 
     messageElement.appendChild(
         username

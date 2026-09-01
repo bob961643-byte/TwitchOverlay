@@ -48,6 +48,12 @@ function getTokenPath() {
 
 function saveTwitchToken(tokenData) {
 
+    if (typeof generalSettings !== "undefined" && !generalSettings.rememberTwitchAccount) {
+        deleteTwitchToken();
+        twitchToken = tokenData || null;
+        return;
+    }
+
     try {
 
         const json =
@@ -437,7 +443,7 @@ async function pollTwitchToken(
 
 
             await validateTwitchToken();
-
+            restartAutoChatStatusCheck();
 
             if (mainWindow) {
 
@@ -513,7 +519,7 @@ const overlaySettingsFile =
 
 const defaultOverlaySettings = {
     fontSize: 20, opacity: 85, maxMessages: 10, messageDuration: 30,
-    usernameColor: "#ffffff", usernameColorMode: "twitch", usernameStyle: "bold",
+    usernameColor: "#ffffff", usernameStyle: "bold",
     chatHorizontal: "left", chatVertical: "top",
     messageBackgroundEnabled: false, messageBackgroundOpacity: 70,
     messageBorderRadius: 6, messagePadding: 2, messageGap: 5,
@@ -576,7 +582,12 @@ const defaultGeneralSettings = {
     showMessageTime: true,
     hideEmptyMessages: false,
     autoBackgroundTheme: true,
-    backgroundCheckInterval: 1
+    backgroundCheckInterval: 1,
+    rememberTwitchAccount: true,
+    messageFilterEnabled: false,
+    messageFilterWords: "",
+    autoChatStatus: false,
+    messageBackdropEnabled: false
 };
 
 function loadGeneralSettings() {
@@ -589,10 +600,14 @@ function loadGeneralSettings() {
             fs.readFileSync(generalSettingsFile, "utf8")
         );
 
-        return {
+        const loaded = {
             ...defaultGeneralSettings,
             ...(data && typeof data === "object" ? data : {})
         };
+        if (!(data && Object.prototype.hasOwnProperty.call(data, "messageBackdropEnabled"))) {
+            loaded.messageBackdropEnabled = overlaySettings.messageBackgroundEnabled === true;
+        }
+        return loaded;
     } catch (error) {
         console.error("Ошибка загрузки общих настроек:", error);
         return { ...defaultGeneralSettings };
@@ -647,6 +662,17 @@ function normalizeGeneralSettings() {
                 Number(generalSettings.backgroundCheckInterval) || 1
             )
         );
+
+    generalSettings.rememberTwitchAccount =
+        Boolean(generalSettings.rememberTwitchAccount);
+    generalSettings.messageFilterEnabled =
+        Boolean(generalSettings.messageFilterEnabled);
+    generalSettings.messageFilterWords =
+        String(generalSettings.messageFilterWords || "");
+    generalSettings.autoChatStatus =
+        Boolean(generalSettings.autoChatStatus);
+    generalSettings.messageBackdropEnabled =
+        Boolean(generalSettings.messageBackdropEnabled);
 }
 
 normalizeGeneralSettings();
@@ -701,13 +727,12 @@ async function checkForUpdates() {
     try {
         await autoUpdater.checkForUpdates();
     } catch (error) {
-        console.error("AutoUpdater: ошибка проверки:", error);
+        console.error(
+            "AutoUpdater: ошибка проверки:",
+            error
+        );
 
-        if (
-            mainWindow &&
-            !mainWindow.isDestroyed() &&
-            !mainWindow.webContents.isDestroyed()
-        ) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send(
                 "update-check-result",
                 {
@@ -1574,6 +1599,21 @@ async function connectToTwitchChat(
                 return;
             }
 
+            // Фильтр «Общие» проверяем сразу, до загрузки badge/emote данных,
+            // чтобы запрещённое сообщение вообще не доходило до Overlay.
+            const filterWords = String(generalSettings.messageFilterWords || "")
+                .split(/[\s,;]+/)
+                .map(word => word.trim().toLowerCase())
+                .filter(Boolean);
+
+            if (generalSettings.messageFilterEnabled && filterWords.length) {
+                const lowerMessage = String(message || "").toLowerCase();
+                if (filterWords.some(word => lowerMessage.includes(word))) {
+                    console.log("Message blocked by general filter");
+                    return;
+                }
+            }
+
             const badges = {
                 ...(tags.badges || {})
             };
@@ -1626,6 +1666,10 @@ async function connectToTwitchChat(
                         `${name}:${version}`
                     ] || null;
 
+            }
+
+            if (generalSettings.hideEmptyMessages && !String(message || "").trim()) {
+                return;
             }
 
             const chatMessage = {
@@ -1960,6 +2004,26 @@ ipcMain.on(
             );
         }
 
+        if (!generalSettings.rememberTwitchAccount) {
+            const wasConnected = Boolean(twitchToken?.accessToken);
+            if (wasConnected) {
+                disconnectFromTwitchChat().catch(() => {});
+            }
+            deleteTwitchToken();
+            if (wasConnected && mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send("twitch-logged-out");
+            }
+        } else if (twitchToken?.accessToken) {
+            saveTwitchToken(twitchToken);
+        }
+
+        // Подложка для читаемости сообщений управляется из «Общие»,
+        // но использует существующую настройку Overlay.
+        overlaySettings.messageBackgroundEnabled =
+            generalSettings.messageBackdropEnabled;
+        saveOverlaySettings(overlaySettings);
+        sendOverlaySettings();
+        restartAutoChatStatusCheck();
         sendGeneralSettings();
     }
 );
@@ -1968,20 +2032,6 @@ ipcMain.on(
     "general-check-updates",
     () => {
         checkForUpdates();
-    }
-);
-ipcMain.on(
-    "general-install-update",
-    () => {
-        if (!app.isPackaged) {
-            return;
-        }
-
-        try {
-            autoUpdater.quitAndInstall();
-        } catch (error) {
-            console.error("AutoUpdater: ошибка установки:", error);
-        }
     }
 );
 
@@ -2100,10 +2150,6 @@ ipcMain.on(
 
         if (!/^#[0-9a-fA-F]{6}$/.test(String(overlaySettings.usernameColor))) {
             overlaySettings.usernameColor = "#ffffff";
-        }
-
-        if (!["twitch", "custom"].includes(overlaySettings.usernameColorMode)) {
-            overlaySettings.usernameColorMode = "twitch";
         }
 
         if (!["normal", "bold", "italic", "bold-italic"].includes(overlaySettings.usernameStyle)) {
@@ -2522,6 +2568,7 @@ function registerHotkeys() {
     globalShortcut.unregisterAll();
     const requested = { ...defaultHotkeys, ...hotkeySettings };
     const registered = {};
+    const failed = [];
 
     for (const [action, accelerator] of Object.entries(requested)) {
         const key = normalizeAccelerator(accelerator);
@@ -2530,21 +2577,30 @@ function registerHotkeys() {
             const ok = globalShortcut.register(key, () => handleHotkeyAction(action));
             if (!ok) {
                 console.error("Не удалось зарегистрировать горячую клавишу:", action, key);
-                globalShortcut.unregisterAll();
-                return false;
+                failed.push({ action, key });
+                break;
             }
             registered[action] = key;
         } catch (error) {
             console.error("Ошибка регистрации горячей клавиши:", action, key, error);
-            globalShortcut.unregisterAll();
-            return false;
+            failed.push({ action, key });
+            break;
         }
+    }
+
+    if (failed.length) {
+        globalShortcut.unregisterAll();
+        return {
+            success: false,
+            failed: failed[0],
+            registered
+        };
     }
 
     hotkeySettings = { ...requested, ...registered };
     saveJsonFile(hotkeysFile, hotkeySettings);
     mainWindow?.webContents.send("hotkeys-settings", hotkeySettings);
-    return true;
+    return { success: true, registered };
 }
 
 function handleHotkeyAction(action) {
@@ -2567,12 +2623,39 @@ function handleHotkeyAction(action) {
     }
 
     if (action === "editOverlay") {
-        if (!overlayWindow || overlayWindow.isDestroyed()) createOverlay();
-        overlayEditing = true;
-        overlayWindow.setIgnoreMouseEvents(false);
-        overlayWindow.setFocusable(true);
-        overlayWindow.focus();
-        if (overlayReady) overlayWindow.webContents.send("overlay-edit-mode", true);
+        // Горячая клавиша редактирования работает как переключатель:
+        // первое нажатие открывает Overlay и включает режим редактирования,
+        // следующее нажатие выключает режим редактирования, оставляя Overlay открытым.
+        if (!overlayWindow || overlayWindow.isDestroyed()) {
+            createOverlay();
+            overlayEditing = true;
+            return;
+        }
+
+        if (!overlayWindow.isVisible()) {
+            overlayWindow.show();
+            overlayEditing = true;
+            overlayWindow.setIgnoreMouseEvents(false);
+            overlayWindow.setFocusable(true);
+            overlayWindow.focus();
+            if (overlayReady) overlayWindow.webContents.send("overlay-edit-mode", true);
+            return;
+        }
+
+        overlayEditing = !overlayEditing;
+
+        if (overlayEditing) {
+            overlayWindow.setIgnoreMouseEvents(false);
+            overlayWindow.setFocusable(true);
+            overlayWindow.focus();
+        } else {
+            overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+            overlayWindow.setFocusable(false);
+        }
+
+        if (overlayReady) {
+            overlayWindow.webContents.send("overlay-edit-mode", overlayEditing);
+        }
     }
 }
 
@@ -2603,6 +2686,17 @@ function normalizeProfiles() {
 normalizeProfiles();
 
 ipcMain.handle("hotkeys-get-settings", () => hotkeySettings);
+ipcMain.on("hotkeys-start-recording", (event, action) => {
+    const current = normalizeAccelerator(hotkeySettings?.[action]);
+    if (current) {
+        try { globalShortcut.unregister(current); } catch {}
+    }
+});
+
+ipcMain.on("hotkeys-cancel-recording", () => {
+    registerHotkeys();
+});
+
 ipcMain.on("hotkeys-set-settings", (event, incoming) => {
     if (!incoming || typeof incoming !== "object") return;
     const requested = { ...defaultHotkeys, ...incoming };
@@ -2617,10 +2711,21 @@ ipcMain.on("hotkeys-set-settings", (event, incoming) => {
     }
     const previous = { ...hotkeySettings };
     hotkeySettings = requested;
-    if (!registerHotkeys()) {
+    const registration = registerHotkeys();
+    if (!registration.success) {
         hotkeySettings = previous;
-        registerHotkeys();
-        event.sender.send("hotkeys-save-result", { success: false, error: "Эта комбинация занята другой программой или недоступна." });
+        const restored = registerHotkeys();
+        const failedKey = registration.failed?.key || "";
+        const failedAction = registration.failed?.action || "";
+        const message = failedKey
+            ? `Не удалось назначить «${failedKey}» для действия «${failedAction}". Комбинация занята другой программой или недоступна.`
+            : "Не удалось зарегистрировать горячую клавишу.";
+        console.error("Hotkey save failed:", registration.failed, "restored:", restored);
+        event.sender.send("hotkeys-save-result", {
+            success: false,
+            error: message,
+            settings: hotkeySettings
+        });
         return;
     }
     event.sender.send("hotkeys-save-result", { success: true, settings: hotkeySettings });
@@ -2635,200 +2740,186 @@ ipcMain.on("appearance-set-settings", (event, incoming) => {
 });
 
 ipcMain.handle("profiles-get", () => profiles);
+
+function sendProfilesResult(event, success, error = undefined) {
+    event.sender.send("profiles-result", {
+        success,
+        error,
+        profiles
+    });
+}
+
 ipcMain.on("profiles-create", (event, name) => {
     const clean = String(name || "").trim();
-    if (!clean || clean.length > 40 || profiles.profiles[clean]) {
-        return event.sender.send("profiles-result", {
-            success: false,
-            error: "Некорректное или уже существующее имя профиля."
-        });
+    if (!clean || clean.length > 40) {
+        return sendProfilesResult(event, false, "Название профиля должно содержать от 1 до 40 символов.");
+    }
+    if (profiles.profiles[clean]) {
+        return sendProfilesResult(event, false, "Профиль с таким именем уже существует.");
     }
 
-    profiles.profiles[clean] = { ...overlaySettings };
+    profiles.profiles[clean] = JSON.parse(JSON.stringify(overlaySettings));
     profiles.activeProfile = clean;
 
     const saved = saveProfiles();
+    if (!saved) return sendProfilesResult(event, false, "Не удалось сохранить новый профиль.");
 
-    event.sender.send("profiles-result", {
-        success: saved,
-        error: saved ? undefined : "Не удалось сохранить новый профиль.",
-        profiles
-    });
+    sendOverlaySettings();
+    sendProfilesResult(event, true);
 });
 
 ipcMain.on("profiles-select", (event, name) => {
     const clean = String(name || "").trim();
-
     if (!profiles.profiles[clean]) {
-        return event.sender.send("profiles-result", {
-            success: false,
-            error: "Профиль не найден."
-        });
+        return sendProfilesResult(event, false, "Профиль не найден.");
     }
 
     overlaySettings = {
         ...defaultOverlaySettings,
-        ...profiles.profiles[clean]
+        ...JSON.parse(JSON.stringify(profiles.profiles[clean]))
     };
-
     profiles.activeProfile = clean;
 
     saveOverlaySettings(overlaySettings);
     const saved = saveProfiles();
+    if (!saved) return sendProfilesResult(event, false, "Не удалось сохранить выбранный профиль.");
 
     sendOverlaySettings();
-
-    event.sender.send("profiles-result", {
-        success: saved,
-        error: saved ? undefined : "Не удалось сохранить выбранный профиль.",
-        profiles
-    });
+    sendProfilesResult(event, true);
 });
+
 ipcMain.on("profiles-update-current", (event) => {
     const active = profiles.activeProfile || "Основной профиль";
-    if (!profiles.profiles[active]) {
-        profiles.profiles[active] = { ...overlaySettings };
-    } else {
-        profiles.profiles[active] = { ...overlaySettings };
-    }
+    profiles.profiles[active] = JSON.parse(JSON.stringify(overlaySettings));
     const saved = saveProfiles();
-    event.sender.send("profiles-result", {
-        success: saved,
-        error: saved ? undefined : "Не удалось сохранить профиль.",
-        profiles
-    });
+    sendProfilesResult(event, saved, saved ? undefined : "Не удалось сохранить профиль.");
 });
+
 ipcMain.on("profiles-rename", (event, oldName, newName) => {
-    oldName = String(oldName || "").trim(); newName = String(newName || "").trim();
-    if (!profiles.profiles[oldName] || !newName || profiles.profiles[newName]) return event.sender.send("profiles-result", { success:false, error:"Нельзя переименовать профиль в это имя." });
-    profiles.profiles[newName] = profiles.profiles[oldName];
-    delete profiles.profiles[oldName];
-    if (profiles.activeProfile === oldName) profiles.activeProfile = newName;
+    const oldClean = String(oldName || "").trim();
+    const newClean = String(newName || "").trim();
+
+    if (!profiles.profiles[oldClean]) {
+        return sendProfilesResult(event, false, "Профиль не найден.");
+    }
+    if (!newClean || newClean.length > 40) {
+        return sendProfilesResult(event, false, "Название профиля должно содержать от 1 до 40 символов.");
+    }
+    if (oldClean !== newClean && profiles.profiles[newClean]) {
+        return sendProfilesResult(event, false, "Профиль с таким именем уже существует.");
+    }
+
+    if (oldClean !== newClean) {
+        profiles.profiles[newClean] = profiles.profiles[oldClean];
+        delete profiles.profiles[oldClean];
+        if (profiles.activeProfile === oldClean) profiles.activeProfile = newClean;
+    }
+
     const saved = saveProfiles();
-    event.sender.send("profiles-result", { success: saved, error: saved ? undefined : "Не удалось сохранить профиль.", profiles });
+    sendProfilesResult(event, saved, saved ? undefined : "Не удалось переименовать профиль.");
 });
+
 ipcMain.on("profiles-delete", (event, name) => {
-    name = String(name || "").trim();
-    if (name === "Основной профиль") return event.sender.send("profiles-result", { success:false, error:"Основной профиль удалить нельзя." });
-    if (!profiles.profiles[name]) return event.sender.send("profiles-result", { success:false, error:"Профиль не найден." });
-    delete profiles.profiles[name];
-    if (profiles.activeProfile === name) {
+    const clean = String(name || "").trim();
+    if (clean === "Основной профиль") {
+        return sendProfilesResult(event, false, "Основной профиль удалить нельзя.");
+    }
+    if (!profiles.profiles[clean]) {
+        return sendProfilesResult(event, false, "Профиль не найден.");
+    }
+
+    delete profiles.profiles[clean];
+
+    if (profiles.activeProfile === clean) {
         profiles.activeProfile = "Основной профиль";
-        overlaySettings = { ...defaultOverlaySettings, ...profiles.profiles[profiles.activeProfile] };
+        overlaySettings = {
+            ...defaultOverlaySettings,
+            ...JSON.parse(JSON.stringify(profiles.profiles[profiles.activeProfile] || {}))
+        };
         saveOverlaySettings(overlaySettings);
         sendOverlaySettings();
     }
+
     const saved = saveProfiles();
-    event.sender.send("profiles-result", {
-        success: saved,
-        error: saved ? undefined : "Не удалось сохранить изменения профиля.",
-        profiles
-    });
+    sendProfilesResult(event, saved, saved ? undefined : "Не удалось удалить профиль.");
 });
 
 
 /* =========================
-   APP START
+   AUTO CHAT STATUS
 ========================= */
-function setupAutoUpdater() {
-    if (!app.isPackaged) {
-        console.log("AutoUpdater: development mode, skipped");
+
+let autoChatStatusTimer = null;
+let lastAutoChatLive = false;
+
+async function checkAutoChatStatus() {
+    if (!generalSettings.autoChatStatus || !twitchToken?.accessToken || !twitchToken?.userId) {
         return;
     }
 
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = true;
+    try {
+        const response = await fetch(
+            `https://api.twitch.tv/helix/streams?user_id=${encodeURIComponent(twitchToken.userId)}`,
+            {
+                headers: {
+                    "Client-ID": CLIENT_ID,
+                    Authorization: `Bearer ${twitchToken.accessToken}`
+                }
+            }
+        );
 
-    autoUpdater.on("checking-for-update", () => {
-        console.log("AutoUpdater: проверка обновлений...");
-    });
-
-    autoUpdater.on("update-available", (info) => {
-        console.log("AutoUpdater: доступно обновление:", info.version);
-
-        if (
-            mainWindow &&
-            !mainWindow.isDestroyed() &&
-            !mainWindow.webContents.isDestroyed()
-        ) {
-            mainWindow.webContents.send("update-check-result", {
-                status: "available",
-                currentVersion: app.getVersion(),
-                latestVersion: info.version
-            });
+        if (!response.ok) {
+            console.error("Авто-проверка статуса чата: Twitch вернул", response.status);
+            return;
         }
-    });
 
-    autoUpdater.on("update-not-available", () => {
-        console.log("AutoUpdater: установлена последняя версия");
+        const data = await response.json();
+        const isLive = Array.isArray(data?.data) && data.data.length > 0;
 
-        if (
-            mainWindow &&
-            !mainWindow.isDestroyed() &&
-            !mainWindow.webContents.isDestroyed()
-        ) {
-            mainWindow.webContents.send("update-check-result", {
-                status: "up-to-date",
-                currentVersion: app.getVersion()
-            });
+        if (isLive && !lastAutoChatLive) {
+            createOverlay();
+            try {
+                await connectToTwitchChat(twitchToken.username);
+            } catch (error) {
+                console.error("Не удалось автоматически подключить чат:", error);
+            }
         }
-    });
 
-    autoUpdater.on("download-progress", (progress) => {
-        if (
-            mainWindow &&
-            !mainWindow.isDestroyed() &&
-            !mainWindow.webContents.isDestroyed()
-        ) {
-            mainWindow.webContents.send("update-download-progress", {
-                percent: progress.percent,
-                transferred: progress.transferred,
-                total: progress.total
-            });
-        }
-    });
-
-    autoUpdater.on("update-downloaded", (info) => {
-        console.log("AutoUpdater: обновление загружено:", info.version);
-
-        if (
-            mainWindow &&
-            !mainWindow.isDestroyed() &&
-            !mainWindow.webContents.isDestroyed()
-        ) {
-            mainWindow.webContents.send("update-downloaded", {
-                version: info.version
-            });
-        }
-    });
-
-    autoUpdater.on("error", (error) => {
-        console.error("AutoUpdater error:", error);
-
-        if (
-            mainWindow &&
-            !mainWindow.isDestroyed() &&
-            !mainWindow.webContents.isDestroyed()
-        ) {
-            mainWindow.webContents.send("update-check-result", {
-                status: "unavailable",
-                currentVersion: app.getVersion(),
-                error: error?.message || String(error)
-            });
-        }
-    });
+        lastAutoChatLive = isLive;
+    } catch (error) {
+        console.error("Ошибка авто-проверки статуса стрима:", error);
+    }
 }
 
+function restartAutoChatStatusCheck() {
+    if (autoChatStatusTimer) {
+        clearInterval(autoChatStatusTimer);
+        autoChatStatusTimer = null;
+    }
+
+    if (!generalSettings.autoChatStatus) {
+        lastAutoChatLive = false;
+        return;
+    }
+
+    checkAutoChatStatus();
+    autoChatStatusTimer = setInterval(checkAutoChatStatus, 30000);
+}
+
+/* =========================
+   APP START
+========================= */
 app.whenReady().then(
     async () => {
 
-        loadTwitchToken();
+        if (generalSettings.rememberTwitchAccount) {
+            loadTwitchToken();
+        }
 
         applyAutoStartSetting();
 
         createWindow();
         registerHotkeys();
-        setupAutoUpdater();
 
         setTimeout(
             () => {
@@ -2852,6 +2943,8 @@ app.whenReady().then(
             );
 
         }
+
+        restartAutoChatStatusCheck();
 
 
         app.on(

@@ -1,6 +1,6 @@
 {
   "name": "twitchoverlay",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Twitch Overlay",
   "main": "main.js",
   "scripts": {
@@ -37,14 +37,14 @@
     "win": {
       "target": "nsis"
     },
-   "nsis": {
-  "oneClick": false,
-  "allowToChangeInstallationDirectory": true,
-  "createDesktopShortcut": true,
-  "createStartMenuShortcut": true,
-  "artifactName": "Twitch-Overlay-Setup-${version}.${ext}"
-},
-"publish": [
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "Twitch-Overlay-Setup-${version}.${ext}"
+    },
+    "publish": [
       {
         "provider": "github",
         "owner": "bob961643-byte",
