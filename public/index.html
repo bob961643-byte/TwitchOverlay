@@ -1,0 +1,2825 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Twitch Overlay</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+:root {
+    --bg: #0e1016;
+    --sidebar: #151821;
+    --sidebar-hover: #1c202b;
+    --active: #29213d;
+    --panel: #1a1e27;
+    --input: #141821;
+    --border: #292e39;
+    --text: #f1f1f4;
+    --muted: #979daa;
+    --purple: #9147ff;
+    --purple-dark: #7434d1;
+}
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", Arial, sans-serif;
+}
+
+button,
+input,
+select {
+    font: inherit;
+}
+
+body.theme-light {
+    --bg: #f4f5f7;
+    --sidebar: #ffffff;
+    --sidebar-hover: #eef0f4;
+    --active: #ece5f8;
+    --panel: #ffffff;
+    --input: #f7f8fa;
+    --border: #d8dce4;
+    --text: #171922;
+    --muted: #69707d;
+}
+body.theme-light .titlebar { background:#ffffff; border-bottom-color:#d8dce4; }
+body.theme-light .setting-label, body.theme-light .page-title, body.theme-light .section-title, body.theme-light .profile-name { color:#20232b; }
+body.theme-light .select, body.theme-light .input, body.theme-light .hotkey, body.theme-light .profile { background:#f7f8fa; color:#20232b; }
+body.theme-light .nav-item { color:#4d5360; }
+
+/* =========================
+   WINDOW
+========================= */
+
+.titlebar {
+    height: 42px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #11131a;
+    border-bottom: 1px solid #292d37;
+    user-select: none;
+    -webkit-app-region: drag;
+}
+
+.title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding-left: 15px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #e8e8ec;
+}
+
+.title-logo {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: var(--purple);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.window-buttons {
+    display: flex;
+    height: 42px;
+    -webkit-app-region: no-drag;
+}
+
+.window-buttons button {
+    width: 48px;
+    height: 42px;
+    border: 0;
+    background: transparent;
+    color: #aeb2bb;
+    cursor: pointer;
+    font-size: 15px;
+}
+
+.window-buttons button:hover {
+    background: #252a34;
+}
+
+.window-buttons .close:hover {
+    background: #e81123;
+    color: white;
+}
+
+/* =========================
+   APP
+========================= */
+
+.app {
+    height: calc(100vh - 42px);
+    width: 100%;
+    display: flex;
+}
+
+/* =========================
+   SIDEBAR
+========================= */
+
+.sidebar {
+    width: 248px;
+    min-width: 248px;
+    height: 100%;
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    padding: 15px 11px 11px;
+    display: flex;
+    flex-direction: column;
+}
+
+.logo {
+    height: 43px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 10px;
+    margin-bottom: 8px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.logo-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--purple);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 800;
+}
+
+.navigation {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.nav-item {
+    position: relative;
+    height: 43px;
+    width: 100%;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #d0d3da;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 0 13px;
+    text-align: left;
+    transition: background .15s, color .15s;
+}
+
+.nav-item:hover {
+    background: var(--sidebar-hover);
+    color: white;
+}
+
+.nav-item.active {
+    background: var(--active);
+    color: white;
+}
+
+.nav-item.active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 7px;
+    bottom: 7px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--purple);
+}
+
+.nav-icon {
+    width: 21px;
+    height: 21px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #b9bec8;
+    flex-shrink: 0;
+}
+
+.nav-item.active .nav-icon {
+    color: #d9c4ff;
+}
+
+.nav-icon svg {
+    width: 19px;
+    height: 19px;
+    stroke: currentColor;
+}
+
+.save-area {
+    margin-top: auto;
+    padding: 8px 5px 3px;
+}
+
+.save-button {
+    width: 100%;
+    height: 39px;
+    border: 0;
+    border-radius: 7px;
+    background: var(--purple);
+    color: white;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.save-button:hover {
+    background: #9c58ff;
+}
+
+/* =========================
+   CONTENT
+========================= */
+
+.main {
+    flex: 1;
+    height: 100%;
+    min-width: 0;
+    overflow-y: auto;
+    background: var(--bg);
+    padding: 28px 27px 32px;
+}
+
+.content {
+    width: 100%;
+    max-width: none;
+}
+
+.page {
+    display: none;
+}
+
+.page.active {
+    display: block;
+    animation: showPage .15s ease;
+}
+
+@keyframes showPage {
+    from {
+        opacity: 0;
+        transform: translateY(3px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.page-title {
+    margin: 0 0 24px;
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 700;
+}
+
+/* =========================
+   CARDS
+========================= */
+
+.section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 14px;
+    overflow: hidden;
+}
+
+.section-title {
+    padding: 15px 16px 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #f0f1f3;
+}
+
+.setting-row {
+    min-height: 52px;
+    padding: 0 16px;
+    border-top: 1px solid rgba(255,255,255,.035);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.setting-label {
+    color: #dedfe4;
+    font-size: 14px;
+}
+
+.setting-description {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+/* =========================
+   CHECKBOX
+========================= */
+
+.check-row {
+    justify-content: flex-start;
+    gap: 11px;
+    cursor: pointer;
+}
+
+.checkbox {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid #646a77;
+    background: #20242d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.checkbox.checked {
+    border-color: var(--purple);
+    background: var(--purple);
+}
+
+.checkbox.checked::after {
+    content: "✓";
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+/* =========================
+   SWITCH
+========================= */
+
+.switch {
+    width: 40px;
+    height: 23px;
+    border-radius: 20px;
+    background: #343944;
+    border: 1px solid #4a505d;
+    position: relative;
+    cursor: pointer;
+    transition: .18s;
+    flex-shrink: 0;
+}
+
+.switch::after {
+    content: "";
+    position: absolute;
+    width: 17px;
+    height: 17px;
+    left: 2px;
+    top: 2px;
+    border-radius: 50%;
+    background: #969ba6;
+    transition: .18s;
+}
+
+.switch.on {
+    background: var(--purple);
+    border-color: var(--purple);
+}
+
+.switch.on::after {
+    left: 19px;
+    background: white;
+}
+
+/* =========================
+   SELECT
+========================= */
+
+.select {
+    width: 250px;
+    height: 37px;
+    padding: 0 11px;
+    border-radius: 6px;
+    border: 1px solid #303540;
+    background: var(--input);
+    color: #e8e9ed;
+    outline: none;
+    cursor: pointer;
+}
+
+.select:focus {
+    border-color: #5d3c8e;
+}
+
+/* =========================
+   INPUT
+========================= */
+
+.input {
+    width: 250px;
+    height: 37px;
+    padding: 0 11px;
+    border-radius: 6px;
+    border: 1px solid #303540;
+    background: var(--input);
+    color: white;
+    outline: none;
+}
+
+.input:focus {
+    border-color: #5d3c8e;
+}
+
+/* =========================
+   RANGE
+========================= */
+
+.slider-row {
+    padding: 15px 16px 18px;
+    border-top: 1px solid rgba(255,255,255,.035);
+}
+
+.slider-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 13px;
+}
+
+.slider-value {
+    font-weight: 600;
+}
+
+.range {
+    width: 100%;
+    height: 5px;
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: 10px;
+    outline: none;
+    background: linear-gradient(
+        to right,
+        var(--purple) 0%,
+        var(--purple) var(--value),
+        #343944 var(--value),
+        #343944 100%
+    );
+}
+
+.range::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--purple);
+    cursor: pointer;
+}
+
+/* =========================
+   COLOR
+========================= */
+
+.color {
+    width: 55px;
+    height: 34px;
+    padding: 3px;
+    border-radius: 6px;
+    border: 1px solid #343945;
+    background: #171a22;
+    cursor: pointer;
+}
+
+/* =========================
+   HOTKEY
+========================= */
+
+.hotkey-input {
+    cursor: pointer;
+}
+
+.hotkey-input.recording {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 2px rgba(145,71,255,.18);
+}
+
+.hotkey {
+    min-width: 135px;
+    padding: 8px 12px;
+    border: 1px solid #343945;
+    border-radius: 6px;
+    background: #151921;
+    color: #d9dce2;
+    text-align: center;
+    font-size: 12px;
+}
+
+/* =========================
+   STATUS
+========================= */
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #a9adb6;
+    font-size: 13px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #d59c31;
+}
+
+/* =========================
+   PROFILE
+========================= */
+
+.profile-actions { display:flex; gap:8px; flex-wrap:wrap; }
+
+.profile {
+    margin: 0 16px 13px;
+    padding: 14px;
+    border: 1px solid #303540;
+    border-radius: 7px;
+    background: #161a22;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.profile-name {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.profile-info {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.small-button {
+    border: 1px solid #3a404d;
+    background: #242934;
+    color: #e7e8eb;
+    border-radius: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+}
+
+.small-button:hover {
+    background: #2b303c;
+}
+
+/* =========================
+   ABOUT
+========================= */
+
+.about {
+    padding: 45px 20px;
+    text-align: center;
+}
+
+.about-logo {
+    width: 68px;
+    height: 68px;
+    margin: 0 auto 16px;
+    border-radius: 17px;
+    background: var(--purple);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 34px;
+    font-weight: 800;
+}
+
+.about h2 {
+    margin: 0 0 7px;
+    font-size: 20px;
+}
+
+.about p {
+    margin: 5px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+/* =========================
+   TOAST
+========================= */
+
+.toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    padding: 11px 16px;
+    border-radius: 7px;
+    background: #272d38;
+    border: 1px solid #3b414e;
+    color: white;
+    font-size: 13px;
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+    transition: .2s;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+.chat-messages {
+    width: 100%;
+    max-height: 300px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+.chat-message {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    font-size: 14px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.chat-username {
+    font-weight: 700;
+}
+
+.chat-text {
+    color: #ffffff;
+}
+.chat-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.chat-badge {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.chat-username {
+    font-weight: 700;
+}
+
+.chat-text {
+    color: #ffffff;
+}
+.chat-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.chat-badge {
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    object-fit: contain;
+    vertical-align: middle;
+}
+</style>
+</head>
+
+<body>
+
+<!-- =========================
+     TITLE BAR
+========================= -->
+
+<div class="titlebar">
+
+    <div class="title">
+        <div class="title-logo">T</div>
+        <span>Twitch Overlay</span>
+    </div>
+
+    <div class="window-buttons">
+        <button id="minimizeButton">−</button>
+        <button id="maximizeButton">□</button>
+        <button id="closeButton" class="close">×</button>
+    </div>
+
+</div>
+
+
+<div class="app">
+
+<!-- =========================
+     SIDEBAR
+========================= -->
+
+<aside class="sidebar">
+
+    <div class="logo">
+        <div class="logo-icon">T</div>
+        <span>Twitch Overlay</span>
+    </div>
+<nav class="navigation">
+
+    <button class="nav-item active" data-page="general">
+        <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.8 1.8 0 0 0 .3 2l.1.1-1.8 1.8-.1-.1a1.8 1.8 0 0 0-2-.3 1.8 1.8 0 0 0-1.1 1.6v.1h-2.6v-.1a1.8 1.8 0 0 0-1.1-1.6 1.8 1.8 0 0 0-2 .3l-.1.1-1.8-1.8.1-.1a1.8 1.8 0 0 0 .3-2 1.8 1.8 0 0 0-1.6-1.1H6v-2.6h.1a1.8 1.8 0 0 0 1.6-1.1 1.8 1.8 0 0 0-.3-2l-.1-.1 1.8-1.8.1.1a1.8 1.8 0 0 0 2 .3A1.8 1.8 0 0 0 12.3 5v-.1h2.6V5a1.8 1.8 0 0 0 1.1 1.6 1.8 1.8 0 0 0 2-.3l.1-.1 1.8 1.8-.1.1a1.8 1.8 0 0 0-.3 2 1.8 1.8 0 0 0 1.6 1.1h.1v2.6H21a1.8 1.8 0 0 0-1.6 1.1z"/>
+            </svg>
+        </span>
+        <span>Общие</span>
+    </button>
+
+    <button class="nav-item" data-page="appearance">
+        <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9"/>
+                <circle cx="9" cy="10" r="1"/>
+                <circle cx="15" cy="10" r="1"/>
+                <path d="M8 15c1.2 1.2 2.5 1.8 4 1.8s2.8-.6 4-1.8"/>
+            </svg>
+        </span>
+        <span>Внешний вид</span>
+    </button>
+
+    <button class="nav-item" data-page="messages">
+        <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 5h16v11H8l-4 4V5z"/>
+                <path d="M8 9h8M8 12h5"/>
+            </svg>
+        </span>
+        <span>Сообщения</span>
+    </button>
+
+    <button class="nav-item" data-page="emotes">
+        <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9"/>
+                <circle cx="9" cy="10" r="1"/>
+                <circle cx="15" cy="10" r="1"/>
+                <path d="M8 14c1.2 1.5 2.5 2.2 4 2.2s2.8-.7 4-2.2"/>
+            </svg>
+        </span>
+        <span>Эмодзи</span>
+    </button>
+
+    <button class="nav-item" data-page="profiles">
+        <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="8" r="3.5"/>
+                <path d="M5 20c.8-3.5 3.2-5.5 7-5.5s6.2 2 7 5.5"/>
+            </svg>
+        </span>
+        <span>Профили</span>
+    </button>
+
+    <button class="nav-item" data-page="hotkeys">
+        <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="5" width="18" height="14" rx="2"/>
+                <path d="M6 9h2M10 9h2M14 9h2M18 9h1M6 13h3M11 13h3M16 13h3M6 16h7M15 16h4"/>
+            </svg>
+        </span>
+        <span>Горячие клавиши</span>
+    </button>
+
+    <button class="nav-item" data-page="twitch">
+        <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 3h17v12l-5 5h-4l-3 3v-3H4z"/>
+                <path d="M9 8v5M15 8v5"/>
+            </svg>
+        </span>
+        <span>Twitch</span>
+    </button>
+
+    <button class="nav-item" data-page="obs">
+        <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="8"/>
+                <circle cx="12" cy="12" r="3"/>
+            </svg>
+        </span>
+        <span>OBS</span>
+    </button>
+
+    <button class="nav-item" data-page="about">
+        <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M12 11v6"/>
+                <circle cx="12" cy="7.5" r=".7" fill="currentColor"/>
+            </svg>
+        </span>
+        <span>О программе</span>
+    </button>
+
+</nav>
+
+    <div class="save-area">
+        <button class="save-button" id="saveButton">
+            <span>▣</span>
+            Сохранить настройки
+        </button>
+    </div>
+
+</aside>
+
+
+<!-- =========================
+     MAIN
+========================= -->
+
+<main class="main">
+
+<div class="content">
+
+<!-- =========================
+     GENERAL
+========================= -->
+
+<section class="page active" id="page-general">
+
+<h1 class="page-title">Настройки</h1>
+
+<div class="section">
+
+    <div class="section-title">Основные</div>
+
+    <div class="setting-row check-row">
+        <div class="checkbox checked" id="generalAutoStart"></div>
+        <div class="setting-label">Запускать с Windows</div>
+    </div>
+
+    <div class="setting-row check-row">
+        <div class="checkbox checked" id="generalCheckUpdates"></div>
+        <div class="setting-label">Проверять обновления при запуске</div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">Язык интерфейса</div>
+
+        <select class="select" id="generalLanguage">
+            <option>Русский</option>
+            <option>English</option>
+            <option>Deutsch</option>
+            <option>Українська</option>
+        </select>
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div class="section-title">Поведение</div>
+
+    <div class="setting-row">
+        <div class="setting-label">Поверх всех окон</div>
+        <div class="switch on" id="generalAlwaysOnTop"></div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">Показывать время сообщений</div>
+        <div class="switch on" id="generalShowMessageTime"></div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">Скрывать пустые сообщения</div>
+        <div class="switch" id="generalHideEmptyMessages"></div>
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div class="section-title">Автоопределение фона</div>
+
+    <div class="setting-row">
+        <div class="setting-label">
+            Автоматически подстраивать тему под фон
+        </div>
+
+        <div class="switch on" id="generalAutoBackgroundTheme"></div>
+    </div>
+
+    <div class="setting-row">
+        <div class="setting-label">Интервал проверки фона</div>
+
+        <select class="select" id="generalBackgroundInterval">
+            <option value="1">1 сек.</option>
+            <option value="2.5">2.5 сек.</option>
+            <option value="5">5 сек.</option>
+            <option value="10">10 сек.</option>
+        </select>
+    </div>
+
+</div>
+
+
+<div class="section">
+
+    <div class="section-title">Прозрачность</div>
+
+    <div class="slider-row">
+
+        <div class="slider-header">
+            <span class="setting-label">
+                Прозрачность оверлея:
+            </span>
+
+            <span class="slider-value" id="opacityValue">
+                85%
+            </span>
+        </div>
+
+        <input
+            class="range"
+            id="opacitySlider"
+            type="range"
+            min="0"
+            max="100"
+            value="85"
+            style="--value:85%;"
+        >
+
+    </div>
+
+</div>
+
+</section>
+
+
+<!-- =========================
+     APPEARANCE
+========================= -->
+
+<section class="page" id="page-appearance">
+
+<h1 class="page-title">Внешний вид</h1>
+
+<div class="section">
+    <div class="section-title">Оформление интерфейса</div>
+    <div class="setting-row">
+        <div><div class="setting-label">Основной цвет</div><div class="setting-description">Цвет кнопок, акцентов и элементов управления</div></div>
+        <input class="color" id="appearancePrimaryColor" type="color" value="#9147ff">
+    </div>
+    <div class="setting-row">
+        <div><div class="setting-label">Размер текста</div><div class="setting-description">Масштаб текста интерфейса приложения</div></div>
+        <select class="select" id="appearanceTextScale">
+            <option value="small">Маленький</option><option value="medium" selected>Средний</option><option value="large">Большой</option>
+        </select>
+    </div>
+    <div class="setting-row">
+        <div><div class="setting-label">Тема</div><div class="setting-description">Внешний вид панели управления</div></div>
+        <select class="select" id="appearanceTheme">
+            <option value="dark">Тёмная</option><option value="system">Системная</option><option value="light">Светлая</option>
+        </select>
+    </div>
+    <div class="setting-row">
+        <div><div class="setting-label">Рамка режима редактирования Overlay</div><div class="setting-description">Показывать визуальную рамку при перемещении и изменении размера</div></div>
+        <div class="switch on" id="appearanceEditBorder" data-managed="true"></div>
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-title">Предпросмотр</div>
+    <div class="setting-row">
+        <div><div class="setting-label">Акцентный цвет</div><div class="setting-description">Изменение применяется сразу, без перезапуска</div></div>
+        <div id="appearanceColorPreview" style="width:42px;height:24px;border-radius:6px;border:1px solid #343945;"></div>
+    </div>
+    <div class="setting-row">
+        <div><div class="setting-label">Сбросить оформление</div><div class="setting-description">Вернуть стандартные значения внешнего вида</div></div>
+        <button class="small-button" id="resetAppearanceButton">Сбросить</button>
+    </div>
+</div>
+
+</section>
+
+
+<!-- =========================
+     MESSAGES
+========================= -->
+<section class="page" id="page-messages">
+<h1 class="page-title">Сообщения</h1>
+<div class="section">
+<div class="section-title">Основные настройки</div>
+<div class="setting-row"><div class="setting-label">Максимальное количество сообщений</div><input class="input" id="chatMaxMessages" type="number" min="1" max="100" value="10"></div>
+<div class="setting-row"><div class="setting-label">Размер текста</div><input class="input" id="chatFontSize" type="number" min="10" max="100" value="20"><span>px</span></div>
+<div class="setting-row"><div class="setting-label">Время отображения сообщения</div><input class="input" id="chatMessageDuration" type="number" min="1" max="600" value="30"><span>сек.</span></div>
+</div>
+<div class="section">
+<div class="section-title">Фон и расстояния</div>
+<div class="setting-row"><div class="setting-label">Фон сообщения</div><div class="switch" id="messageBackgroundEnabled" data-managed="true"></div></div>
+<div class="setting-row"><div class="setting-label">Прозрачность фона</div><input class="input" id="messageBackgroundOpacity" type="number" min="0" max="100" value="70"><span>%</span></div>
+<div class="setting-row"><div class="setting-label">Скругление</div><input class="input" id="messageBorderRadius" type="number" min="0" max="50" value="6"><span>px</span></div>
+<div class="setting-row"><div class="setting-label">Отступы сообщения</div><input class="input" id="messagePadding" type="number" min="0" max="50" value="2"><span>px</span></div>
+<div class="setting-row"><div class="setting-label">Расстояние между сообщениями</div><input class="input" id="messageGap" type="number" min="0" max="50" value="5"><span>px</span></div>
+<div class="setting-row"><div class="setting-label">Тень текста</div><div class="switch on" id="textShadowEnabled" data-managed="true"></div></div>
+</div>
+<div class="section">
+<div class="section-title">Эмоты и значки</div>
+<div class="setting-row"><div class="setting-label">Размер Twitch-эмотов</div><input class="input" id="emoteSize" type="number" min="16" max="100" value="30"><span>px</span></div>
+<div class="setting-row"><div class="setting-label">Размер значков (Badges)</div><input class="input" id="badgeSize" type="number" min="12" max="60" value="20"><span>px</span></div>
+<div class="setting-row"><div class="setting-label">Отступ эмота от текста</div><input class="input" id="emoteSpacing" type="number" min="0" max="20" value="2"><span>px</span></div>
+<div class="setting-row"><div class="setting-label">Показывать Twitch-эмоты</div><div class="switch on" id="showTwitchEmotes" data-managed="true"></div></div>
+<div class="setting-row"><div class="setting-label">Показывать значки пользователей</div><div class="switch on" id="showBadges" data-managed="true"></div></div>
+<div class="setting-row"><div class="setting-label">Unicode-эмодзи</div><div class="setting-description">Размер автоматически следует размеру текста</div></div>
+</div>
+<div class="section">
+<div class="section-title">Анимация сообщений</div>
+<div class="setting-row"><div class="setting-label">Анимация появления</div><div class="switch on" id="messageEnterEnabled" data-managed="true"></div></div>
+<div class="setting-row"><div class="setting-label">Тип появления</div>
+<select class="select" id="messageEnterType"><option value="fade">Плавное появление</option><option value="left">Слева</option><option value="right">Справа</option><option value="top">Сверху</option><option value="bottom">Снизу</option><option value="scale">Увеличение</option><option value="none">Без анимации</option></select></div>
+<div class="setting-row"><div class="setting-label">Скорость появления</div><input class="input" id="messageEnterDuration" type="number" min="0.1" max="2" step="0.1" value="0.2"><span>сек.</span></div>
+<div class="setting-row"><div class="setting-label">Анимация исчезновения</div><div class="switch on" id="messageExitEnabled" data-managed="true"></div></div>
+<div class="setting-row"><div class="setting-label">Тип исчезновения</div>
+<select class="select" id="messageExitType"><option value="fade">Плавное исчезновение</option><option value="left">Влево</option><option value="right">Вправо</option><option value="top">Вверх</option><option value="bottom">Вниз</option><option value="scale">Уменьшение</option><option value="none">Без анимации</option></select></div>
+<div class="setting-row"><div class="setting-label">Скорость исчезновения</div><input class="input" id="messageExitDuration" type="number" min="0.1" max="2" step="0.1" value="0.25"><span>сек.</span></div>
+</div>
+<div class="section">
+<div class="section-title">Имя пользователя</div>
+<div class="setting-row"><div class="setting-label">Цвет имени пользователя</div><input class="color" id="chatUsernameColor" type="color" value="#ffffff"></div>
+<div class="setting-row"><div class="setting-label">Стиль имени пользователя</div><select class="select" id="chatUsernameStyle"><option value="normal">Обычный</option><option value="bold" selected>Жирный</option><option value="italic">Курсив</option><option value="bold-italic">Жирный + курсив</option></select></div>
+</div>
+</section>
+
+
+<!-- =========================
+     EMOTES
+========================= -->
+
+<section class="page" id="page-emotes">
+
+<h1 class="page-title">Эмодзи</h1>
+
+<div class="section">
+    <div class="section-title">Источники эмотов</div>
+    <div class="setting-row"><div><div class="setting-label">Показывать Twitch Emotes</div><div class="setting-description">Официальные эмоты Twitch из сообщений чата</div></div><div class="switch on" id="emotesTwitchEnabled" data-managed="true"></div></div>
+    <div class="setting-row"><div><div class="setting-label">Показывать BTTV</div><div class="setting-description">BetterTTV глобальные и каналные эмоты</div></div><div class="switch on" id="emotesBttvEnabled" data-managed="true"></div></div>
+    <div class="setting-row"><div><div class="setting-label">Показывать 7TV</div><div class="setting-description">7TV глобальные и каналные эмоты</div></div><div class="switch on" id="emotes7tvEnabled" data-managed="true"></div></div>
+</div>
+
+<div class="section">
+    <div class="section-title">Размер и отображение</div>
+    <div class="setting-row"><div><div class="setting-label">Размер эмодзи</div><div class="setting-description">Размер Twitch / BTTV / 7TV эмотов</div></div><select class="select" id="emotesSize"><option value="16">16 px</option><option value="20">20 px</option><option value="24">24 px</option><option value="30" selected>30 px</option><option value="36">36 px</option><option value="48">48 px</option><option value="64">64 px</option><option value="80">80 px</option><option value="100">100 px</option></select></div>
+    <div class="setting-row"><div><div class="setting-label">Анимированные эмоты</div><div class="setting-description">Использовать анимированную версию, если она доступна</div></div><div class="switch on" id="emotesAnimatedEnabled" data-managed="true"></div></div>
+    <div class="setting-row"><div><div class="setting-label">Показывать Unicode-эмодзи</div><div class="setting-description">😂 ❤️ 🔥 и другие обычные символы остаются текстом</div></div><div class="switch on" id="emotesUnicodeEnabled" data-managed="true"></div></div>
+</div>
+
+<div class="section">
+    <div class="section-title">Статус загрузки</div>
+    <div class="setting-row"><div><div class="setting-label">Наборы эмотов канала</div><div class="setting-description">BTTV и 7TV загружаются автоматически при подключении к чату</div></div><div class="status" id="emotesStatus"><span class="status-dot"></span>Ожидание подключения</div></div>
+</div>
+
+</section>
+
+
+<!-- =========================
+     PROFILES
+========================= -->
+
+<section class="page" id="page-profiles">
+
+<h1 class="page-title">Профили</h1>
+
+<div class="section">
+    <div class="section-title">Профили Overlay</div>
+    <div class="setting-row"><div><div class="setting-label">Активный профиль</div><div class="setting-description" id="activeProfileDescription">Основной профиль</div></div><button class="small-button" id="createProfileButton">+ Создать</button></div>
+    <div id="profilesList"></div>
+</div>
+
+<div class="section">
+    <div class="section-title">Управление текущим профилем</div>
+    <div class="setting-row"><div><div class="setting-label">Сохранить текущие настройки в профиль</div><div class="setting-description">Перезаписывает активный профиль текущими настройками Overlay</div></div><button class="small-button" id="saveCurrentProfileButton">Сохранить</button></div>
+</div>
+
+</section>
+
+
+<!-- =========================
+     HOTKEYS
+========================= -->
+
+<section class="page" id="page-hotkeys">
+
+<h1 class="page-title">Горячие клавиши</h1>
+
+<div class="section">
+    <div class="section-title">Управление оверлеем</div>
+    <div class="setting-row"><div><div class="setting-label">Показать / скрыть оверлей</div><div class="setting-description">Глобальная комбинация работает даже когда приложение не в фокусе</div></div><button class="hotkey hotkey-input" id="hotkeyToggleOverlay" type="button">Ctrl + Shift + O</button></div>
+    <div class="setting-row"><div><div class="setting-label">Показать настройки</div><div class="setting-description">Показывает и фокусирует главное окно</div></div><button class="hotkey hotkey-input" id="hotkeyShowSettings" type="button">Ctrl + Shift + S</button></div>
+    <div class="setting-row"><div><div class="setting-label">Переместить оверлей</div><div class="setting-description">Открывает Overlay и включает режим редактирования</div></div><button class="hotkey hotkey-input" id="hotkeyEditOverlay" type="button">Ctrl + Shift + M</button></div>
+</div>
+
+<div class="section">
+    <div class="section-title">Назначение</div>
+    <div class="setting-row"><div class="setting-label">Нажми на поле и затем нужную комбинацию клавиш.</div><div class="setting-description">Изменения регистрируются глобально и сохраняются после перезапуска.</div></div>
+    <div class="setting-row"><div><div class="setting-label">Сбросить горячие клавиши</div><div class="setting-description">Вернуть стандартные комбинации</div></div><button class="small-button" id="resetHotkeysButton">Сбросить</button></div>
+</div>
+
+</section>
+
+
+<!-- =========================
+     TWITCH
+========================= -->
+
+<section class="page" id="page-twitch">
+
+    <h1 class="page-title">Twitch</h1>
+
+    <div class="section">
+
+        <div class="section-title">Подключение к Twitch</div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">Статус подключения</div>
+                <div class="setting-description">
+                    Подключите свой Twitch-аккаунт для получения сообщений чата
+                </div>
+            </div>
+
+            <div class="status" id="twitchStatus">
+                <span class="status-dot" id="twitchStatusDot"></span>
+                Не подключено
+            </div>
+        </div>
+<div class="setting-row">
+            <div>
+                <div class="setting-label">Показывать сообщения чата</div>
+                <div class="setting-description">
+                    Отображать сообщения Twitch в оверлее
+                </div>
+            </div>
+
+            <div class="switch on" id="twitchChatEnabled" data-managed="true"></div>
+        </div>
+
+    </div>
+
+
+    <div class="section">
+
+        <div class="section-title">Вход в аккаунт</div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">Twitch аккаунт</div>
+                <div class="setting-description">
+                    Авторизация будет использоваться для подключения к чату
+                </div>
+            </div>
+
+            <button class="small-button" id="twitchLogin">
+                Войти через Twitch
+            </button>
+        </div>
+
+    </div>
+    <div class="section">
+
+        <div class="section-title">Чат Twitch</div>
+<div class="setting-row">
+    <div>
+        <div class="setting-label">Канал для отображения чата</div>
+        <div class="setting-description">
+            Выбери свой канал или укажи Twitch-канал другого стримера
+        </div>
+    </div>
+
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+
+        <select
+            class="select"
+            id="chatChannelMode"
+        >
+            <option value="own">Мой канал</option>
+            <option value="other">Другой канал</option>
+        </select>
+
+        <input
+            class="input"
+            id="otherChatChannel"
+            type="text"
+            placeholder="Имя Twitch-канала"
+            style="display:none; width:220px;"
+        >
+
+    </div>
+</div>
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">Подключение к чату</div>
+                <div class="setting-description">
+                    Подключает приложение к чату выбранного Twitch-канала
+                </div>
+            </div>
+
+            <button class="small-button" id="connectChatButton">
+                Подключить чат
+            </button>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">Статус чата</div>
+                <div class="setting-description">
+                    Текущее состояние подключения к Twitch-чату
+                </div>
+            </div>
+
+            <div class="status" id="chatStatus">
+                <span class="status-dot"></span>
+                Не подключено
+            </div>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">Twitch Overlay</div>
+                <div class="setting-description">
+                    Отдельное прозрачное окно поверх других приложений
+                </div>
+            </div>
+
+            <div style="display:flex; gap:8px;">
+                <button class="small-button" id="launchOverlayButton">
+                    Запустить Overlay
+                </button>
+
+                <button class="small-button" id="editOverlayButton">
+                    Редактировать
+                </button>
+
+                <button class="small-button" id="closeOverlayButton">
+                    Отключить
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+
+    <div class="section">
+
+        <div class="section-title">Последние сообщения</div>
+
+        <div
+            id="chatMessages"
+            class="chat-messages"
+        ></div>
+
+    </div>
+
+
+    <div class="section">
+
+        <div class="section-title">Тест подключения</div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">Проверить канал</div>
+                <div class="setting-description">
+                    Проверяет существование указанного Twitch-канала
+                </div>
+            </div>
+
+            <button class="small-button" id="twitchTest">
+                Проверить
+            </button>
+        </div>
+
+    </div>
+
+</section>
+
+<!-- =========================
+     OBS
+========================= -->
+
+<section class="page" id="page-obs">
+
+<h1 class="page-title">OBS</h1>
+
+<div class="section">
+
+    <div class="section-title">
+        Подключение к OBS
+    </div>
+
+    <div class="setting-row">
+
+        <div class="setting-label">
+            WebSocket
+        </div>
+
+        <div class="status">
+            <span class="status-dot"></span>
+            Не подключено
+        </div>
+
+    </div>
+
+    <div class="setting-row">
+
+        <div class="setting-label">
+            Адрес
+        </div>
+
+        <input
+            class="input"
+            type="text"
+            value="127.0.0.1"
+        >
+
+    </div>
+
+    <div class="setting-row">
+
+        <div class="setting-label">
+            Порт
+        </div>
+
+        <input
+            class="input"
+            type="number"
+            value="4455"
+        >
+
+    </div>
+
+</div>
+
+</section>
+
+
+<!-- =========================
+     ABOUT
+========================= -->
+
+<section class="page" id="page-about">
+
+<h1 class="page-title">О программе</h1>
+
+<div class="section">
+
+    <div class="about">
+
+        <div class="about-logo">
+            T
+        </div>
+
+        <h2>Twitch Overlay</h2>
+
+        <p>Версия 1.0.0</p>
+
+        <p>
+            Приложение для управления Twitch Overlay
+        </p>
+
+    </div>
+
+</div>
+
+</section>
+
+</div>
+</main>
+
+</div>
+
+
+<div class="toast" id="toast">
+    Настройки сохранены
+</div>
+
+<script>
+
+window.showToast = (message) => {
+    const toast = document.getElementById("toast");
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(window.__toastTimer);
+    window.__toastTimer = setTimeout(
+        () => toast.classList.remove("show"),
+        2200
+    );
+};
+
+/* =========================
+   NAVIGATION
+========================= */
+
+const navItems =
+    document.querySelectorAll(".nav-item");
+
+const pages =
+    document.querySelectorAll(".page");
+
+navItems.forEach((item) => {
+
+    item.addEventListener("click", () => {
+
+        const pageName =
+            item.dataset.page;
+
+        navItems.forEach((nav) => {
+            nav.classList.remove("active");
+        });
+
+        item.classList.add("active");
+
+        pages.forEach((page) => {
+            page.classList.remove("active");
+        });
+
+        const selectedPage =
+            document.getElementById(
+                "page-" + pageName
+            );
+
+        if (selectedPage) {
+            selectedPage.classList.add("active");
+        }
+
+    });
+
+});
+
+
+/* =========================
+   SWITCHES
+========================= */
+
+document
+    .querySelectorAll(".switch")
+    .forEach((switchElement) => {
+
+        if (
+            switchElement.dataset.managed === "true" ||
+            (switchElement.id && switchElement.id.startsWith("general"))
+        ) {
+            return;
+        }
+
+        switchElement.addEventListener(
+            "click",
+            () => {
+                switchElement.classList.toggle("on");
+            }
+        );
+
+    });
+
+
+/* =========================
+   CHECKBOXES
+========================= */
+
+document
+    .querySelectorAll(".checkbox")
+    .forEach((checkbox) => {
+
+        checkbox.addEventListener(
+            "click",
+            () => {
+                checkbox.classList.toggle("checked");
+            }
+        );
+
+    });
+
+
+
+/* =========================
+   SAVE ALL SETTINGS
+========================= */
+
+const saveButton =
+    document.getElementById("saveButton");
+
+if (saveButton) {
+    saveButton.addEventListener(
+        "click",
+        () => {
+            sendGeneralSettings();
+            sendOverlaySettings();
+            sendAppearanceSettings();
+            window.electronAPI?.setHotkeys?.(hotkeyState);
+            window.electronAPI?.updateCurrentProfile?.();
+            window.showToast("Настройки сохранены");
+        }
+    );
+}
+
+document.getElementById("minimizeButton")?.addEventListener("click", () => window.electronAPI?.minimize?.());
+document.getElementById("maximizeButton")?.addEventListener("click", () => window.electronAPI?.maximize?.());
+document.getElementById("closeButton")?.addEventListener("click", () => window.electronAPI?.close?.());
+
+/* =========================
+   GENERAL SETTINGS
+========================= */
+
+const generalAutoStart =
+    document.getElementById("generalAutoStart");
+
+const generalCheckUpdates =
+    document.getElementById("generalCheckUpdates");
+
+const generalLanguage =
+    document.getElementById("generalLanguage");
+
+const generalAlwaysOnTop =
+    document.getElementById("generalAlwaysOnTop");
+
+const generalShowMessageTime =
+    document.getElementById("generalShowMessageTime");
+
+const generalHideEmptyMessages =
+    document.getElementById("generalHideEmptyMessages");
+
+const generalAutoBackgroundTheme =
+    document.getElementById("generalAutoBackgroundTheme");
+
+const generalBackgroundInterval =
+    document.getElementById("generalBackgroundInterval");
+
+let generalState = {
+    autoStart: false,
+    checkUpdates: true,
+    language: "Русский",
+    alwaysOnTop: true,
+    showMessageTime: true,
+    hideEmptyMessages: false,
+    autoBackgroundTheme: true,
+    backgroundCheckInterval: 1
+};
+
+function generalSwitchState(el, fallback) {
+    return el
+        ? el.classList.contains("on")
+        : fallback;
+}
+
+function collectGeneralSettings() {
+    return {
+        autoStart:
+            generalSwitchState(
+                generalAutoStart,
+                false
+            ),
+
+        checkUpdates:
+            generalSwitchState(
+                generalCheckUpdates,
+                true
+            ),
+
+        language:
+            generalLanguage?.value ||
+            "Русский",
+
+        alwaysOnTop:
+            generalSwitchState(
+                generalAlwaysOnTop,
+                true
+            ),
+
+        showMessageTime:
+            generalSwitchState(
+                generalShowMessageTime,
+                true
+            ),
+
+        hideEmptyMessages:
+            generalSwitchState(
+                generalHideEmptyMessages,
+                false
+            ),
+
+        autoBackgroundTheme:
+            generalSwitchState(
+                generalAutoBackgroundTheme,
+                true
+            ),
+
+        backgroundCheckInterval:
+            Number(
+                generalBackgroundInterval?.value
+            ) || 1
+    };
+}
+
+function applyGeneralTheme() {
+    if (typeof appearanceState !== "undefined" && appearanceState.theme === "light") {
+        document.body.classList.add("theme-light");
+        return;
+    }
+    if (typeof appearanceState !== "undefined" && appearanceState.theme === "dark") {
+        document.body.classList.remove("theme-light");
+        return;
+    }
+    if (!generalState.autoBackgroundTheme) {
+        document.body.classList.remove("theme-light");
+        return;
+    }
+    const media = window.matchMedia("(prefers-color-scheme: light)");
+    document.body.classList.toggle("theme-light", media.matches);
+}
+
+let backgroundThemeTimer = null;
+
+function restartBackgroundThemeCheck() {
+
+    if (backgroundThemeTimer) {
+        clearInterval(backgroundThemeTimer);
+        backgroundThemeTimer = null;
+    }
+
+    applyGeneralTheme();
+
+    if (
+        !generalState.autoBackgroundTheme
+    ) {
+        return;
+    }
+
+    const interval =
+        Math.max(
+            0.5,
+            Number(
+                generalState.backgroundCheckInterval
+            ) || 1
+        ) * 1000;
+
+    backgroundThemeTimer =
+        setInterval(
+            applyGeneralTheme,
+            interval
+        );
+}
+
+const languageTexts = {
+    "Русский": {
+        "Twitch Overlay": "Twitch Overlay",
+        "Настройки": "Настройки",
+        "Общие": "Общие",
+        "Внешний вид": "Внешний вид",
+        "Сообщения": "Сообщения",
+        "Эмодзи": "Эмодзи",
+        "Профили": "Профили",
+        "Горячие клавиши": "Горячие клавиши",
+        "Twitch": "Twitch",
+        "OBS": "OBS",
+        "О программе": "О программе",
+        "Сохранить настройки": "Сохранить настройки",
+        "Основные": "Основные",
+        "Запускать с Windows": "Запускать с Windows",
+        "Проверять обновления при запуске": "Проверять обновления при запуске",
+        "Язык интерфейса": "Язык интерфейса",
+        "Поведение": "Поведение",
+        "Поверх всех окон": "Поверх всех окон",
+        "Показывать время сообщений": "Показывать время сообщений",
+        "Скрывать пустые сообщения": "Скрывать пустые сообщения",
+        "Автоопределение фона": "Автоопределение фона",
+        "Автоматически подстраивать тему под фон": "Автоматически подстраивать тему под фон",
+        "Интервал проверки фона": "Интервал проверки фона",
+        "Прозрачность": "Прозрачность",
+        "Прозрачность оверлея:": "Прозрачность оверлея:"
+    },
+    "English": {
+        "Настройки": "Settings",
+        "Общие": "General",
+        "Внешний вид": "Appearance",
+        "Сообщения": "Messages",
+        "Эмодзи": "Emotes",
+        "Профили": "Profiles",
+        "Горячие клавиши": "Hotkeys",
+        "О программе": "About",
+        "Сохранить настройки": "Save settings",
+        "Основные": "Basic",
+        "Запускать с Windows": "Start with Windows",
+        "Проверять обновления при запуске": "Check for updates on startup",
+        "Язык интерфейса": "Interface language",
+        "Поведение": "Behavior",
+        "Поверх всех окон": "Always on top",
+        "Показывать время сообщений": "Show message time",
+        "Скрывать пустые сообщения": "Hide empty messages",
+        "Автоопределение фона": "Background detection",
+        "Автоматически подстраивать тему под фон": "Automatically adapt theme to background",
+        "Интервал проверки фона": "Background check interval",
+        "Прозрачность": "Transparency",
+        "Прозрачность оверлея:": "Overlay opacity:",
+        "Русский": "Russian",
+        "English": "English",
+        "Deutsch": "German",
+        "Українська": "Ukrainian"
+    },
+    "Deutsch": {
+        "Настройки": "Einstellungen",
+        "Общие": "Allgemein",
+        "Внешний вид": "Darstellung",
+        "Сообщения": "Nachrichten",
+        "Эмодзи": "Emotes",
+        "Профили": "Profile",
+        "Горячие клавиши": "Tastenkürzel",
+        "О программе": "Über",
+        "Сохранить настройки": "Einstellungen speichern",
+        "Основные": "Allgemein",
+        "Запускать с Windows": "Mit Windows starten",
+        "Проверять обновления при запуске": "Beim Start nach Updates suchen",
+        "Язык интерфейса": "Oberflächensprache",
+        "Поведение": "Verhalten",
+        "Поверх всех окон": "Immer im Vordergrund",
+        "Показывать время сообщений": "Nachrichtenzeit anzeigen",
+        "Скрывать пустые сообщения": "Leere Nachrichten ausblenden",
+        "Автоопределение фона": "Hintergrunderkennung",
+        "Автоматически подстраивать тему под фон": "Design automatisch an Hintergrund anpassen",
+        "Интервал проверки фона": "Prüfintervall",
+        "Прозрачность": "Transparenz",
+        "Прозрачность оверлея:": "Overlay-Transparenz:",
+        "Русский": "Russisch",
+        "English": "Englisch",
+        "Deutsch": "Deutsch",
+        "Українська": "Ukrainisch"
+    },
+    "Українська": {
+        "Настройки": "Налаштування",
+        "Общие": "Загальні",
+        "Внешний вид": "Вигляд",
+        "Сообщения": "Повідомлення",
+        "Эмодзи": "Емодзі",
+        "Профили": "Профілі",
+        "Горячие клавиши": "Гарячі клавіші",
+        "О программе": "Про програму",
+        "Сохранить настройки": "Зберегти налаштування",
+        "Основные": "Основні",
+        "Запускать с Windows": "Запускати з Windows",
+        "Проверять обновления при запуске": "Перевіряти оновлення під час запуску",
+        "Язык интерфейса": "Мова інтерфейсу",
+        "Поведение": "Поведінка",
+        "Поверх всех окон": "Поверх усіх вікон",
+        "Показывать время сообщений": "Показувати час повідомлень",
+        "Скрывать пустые сообщения": "Приховувати порожні повідомлення",
+        "Автоопределение фона": "Автовизначення фону",
+        "Автоматически подстраивать тему под фон": "Автоматично підлаштовувати тему під фон",
+        "Интервал проверки фона": "Інтервал перевірки фону",
+        "Прозрачность": "Прозорість",
+        "Прозрачность оверлея:": "Прозорість оверлею:",
+        "Русский": "Російська",
+        "English": "Англійська",
+        "Deutsch": "Німецька",
+        "Українська": "Українська"
+    }
+};
+
+function applyInterfaceLanguage(language) {
+
+    const dictionary =
+        languageTexts[language] ||
+        languageTexts["Русский"];
+
+    document.documentElement.lang =
+        language === "English"
+            ? "en"
+            : language === "Deutsch"
+                ? "de"
+                : language === "Українська"
+                    ? "uk"
+                    : "ru";
+
+    const selectors = [
+        ".nav-item span:last-child",
+        ".save-button",
+        "#page-general .page-title",
+        "#page-general .section-title",
+        "#page-general .setting-label",
+        "#page-general .slider-value"
+    ];
+
+    document
+        .querySelectorAll(
+            selectors.join(",")
+        )
+        .forEach((element) => {
+
+            if (
+                element.children.length
+            ) {
+                return;
+            }
+
+            const original =
+                element.dataset.originalText ||
+                element.textContent.trim();
+
+            element.dataset.originalText =
+                original;
+
+            if (
+                dictionary[original]
+            ) {
+                element.textContent =
+                    dictionary[original];
+            }
+
+        });
+
+    if (generalLanguage) {
+        Array.from(
+            generalLanguage.options
+        ).forEach((option) => {
+            const original =
+                option.dataset.originalText ||
+                option.textContent.trim();
+
+            option.dataset.originalText =
+                original;
+
+            if (dictionary[original]) {
+                option.textContent =
+                    dictionary[original];
+            }
+        });
+    }
+}
+
+function applyGeneralSettings(settings) {
+
+    if (!settings) {
+        return;
+    }
+
+    generalState = {
+        ...generalState,
+        ...settings
+    };
+
+    const setSwitch =
+        (element, value) => {
+
+            if (element) {
+                element.classList.toggle(
+                    "on",
+                    Boolean(value)
+                );
+            }
+
+        };
+
+    setSwitch(
+        generalAutoStart,
+        generalState.autoStart
+    );
+
+    setSwitch(
+        generalCheckUpdates,
+        generalState.checkUpdates
+    );
+
+    setSwitch(
+        generalAlwaysOnTop,
+        generalState.alwaysOnTop
+    );
+
+    setSwitch(
+        generalShowMessageTime,
+        generalState.showMessageTime
+    );
+
+    setSwitch(
+        generalHideEmptyMessages,
+        generalState.hideEmptyMessages
+    );
+
+    setSwitch(
+        generalAutoBackgroundTheme,
+        generalState.autoBackgroundTheme
+    );
+
+    if (generalLanguage) {
+        generalLanguage.value =
+            generalState.language || "Русский";
+    }
+
+    if (generalBackgroundInterval) {
+        generalBackgroundInterval.value =
+            String(
+                generalState.backgroundCheckInterval || 1
+            );
+    }
+
+    applyInterfaceLanguage(
+        generalState.language
+    );
+
+    restartBackgroundThemeCheck();
+}
+
+function sendGeneralSettings() {
+
+    if (
+        window.electronAPI?.setGeneralSettings
+    ) {
+        window.electronAPI.setGeneralSettings(
+            collectGeneralSettings()
+        );
+    }
+
+}
+
+[
+    generalAutoStart,
+    generalCheckUpdates,
+    generalAlwaysOnTop,
+    generalShowMessageTime,
+    generalHideEmptyMessages,
+    generalAutoBackgroundTheme
+]
+    .filter(Boolean)
+    .forEach((element) => {
+
+        element.addEventListener(
+            "click",
+            () => {
+
+                element.classList.toggle(
+                    "on"
+                );
+
+                sendGeneralSettings();
+
+                if (
+                    element ===
+                    generalAutoBackgroundTheme
+                ) {
+                    generalState.autoBackgroundTheme =
+                        element.classList.contains("on");
+
+                    restartBackgroundThemeCheck();
+                }
+
+            }
+        );
+
+    });
+
+if (generalLanguage) {
+    generalLanguage.addEventListener(
+        "change",
+        () => {
+            sendGeneralSettings();
+            applyInterfaceLanguage(
+                generalLanguage.value
+            );
+        }
+    );
+}
+
+if (generalBackgroundInterval) {
+    generalBackgroundInterval.addEventListener(
+        "change",
+        () => {
+            sendGeneralSettings();
+            generalState.backgroundCheckInterval =
+                Number(
+                    generalBackgroundInterval.value
+                ) || 1;
+            restartBackgroundThemeCheck();
+        }
+    );
+}
+
+if (window.electronAPI?.getGeneralSettings) {
+    window.electronAPI
+        .getGeneralSettings()
+        .then(applyGeneralSettings)
+        .catch(
+            (error) =>
+                console.error(
+                    "Ошибка загрузки общих настроек:",
+                    error
+                )
+        );
+}
+
+if (window.electronAPI?.onGeneralSettings) {
+    window.electronAPI.onGeneralSettings(
+        applyGeneralSettings
+    );
+}
+
+if (window.electronAPI?.onUpdateCheckResult) {
+    window.electronAPI.onUpdateCheckResult(
+        (result) => {
+
+            if (!window.showToast) {
+                return;
+            }
+
+            if (result.status === "available") {
+                window.showToast(
+                    `Доступно обновление: ${result.latestVersion}`
+                );
+            } else if (
+                result.status === "up-to-date"
+            ) {
+                window.showToast(
+                    "Обновлений нет"
+                );
+            } else {
+                window.showToast(
+                    "Проверка обновлений недоступна"
+                );
+            }
+
+        }
+    );
+}
+
+
+
+/* =========================
+   APPEARANCE
+========================= */
+const appearancePrimaryColor = document.getElementById("appearancePrimaryColor");
+const appearanceTextScale = document.getElementById("appearanceTextScale");
+const appearanceTheme = document.getElementById("appearanceTheme");
+const appearanceEditBorder = document.getElementById("appearanceEditBorder");
+const appearanceColorPreview = document.getElementById("appearanceColorPreview");
+let appearanceState = { primaryColor: "#9147ff", textScale: "medium", theme: "dark", overlayEditBorder: true };
+function applyAppearanceSettings(settings) {
+    if (!settings) return;
+    appearanceState = { ...appearanceState, ...settings };
+    if (appearancePrimaryColor) appearancePrimaryColor.value = appearanceState.primaryColor || "#9147ff";
+    if (appearanceTextScale) appearanceTextScale.value = appearanceState.textScale || "medium";
+    if (appearanceTheme) appearanceTheme.value = appearanceState.theme || "dark";
+    if (appearanceEditBorder) appearanceEditBorder.classList.toggle("on", appearanceState.overlayEditBorder !== false);
+    const color = appearanceState.primaryColor || "#9147ff";
+    document.documentElement.style.setProperty("--purple", color);
+    if (appearanceColorPreview) appearanceColorPreview.style.background = color;
+    document.documentElement.style.setProperty("--ui-scale", appearanceState.textScale === "small" ? "0.92" : appearanceState.textScale === "large" ? "1.08" : "1");
+    document.body.style.zoom = appearanceState.textScale === "small" ? "0.92" : appearanceState.textScale === "large" ? "1.08" : "1";
+    document.body.classList.toggle("theme-light", appearanceState.theme === "light" || (appearanceState.theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches));
+    if (typeof restartBackgroundThemeCheck === "function") restartBackgroundThemeCheck();
+}
+function collectAppearanceSettings() { return { primaryColor: appearancePrimaryColor?.value || "#9147ff", textScale: appearanceTextScale?.value || "medium", theme: appearanceTheme?.value || "dark", overlayEditBorder: appearanceEditBorder?.classList.contains("on") !== false }; }
+function sendAppearanceSettings() { window.electronAPI?.setAppearanceSettings?.(collectAppearanceSettings()); }
+[appearancePrimaryColor, appearanceTextScale, appearanceTheme].filter(Boolean).forEach(el => el.addEventListener("input", sendAppearanceSettings));
+[appearancePrimaryColor, appearanceTextScale, appearanceTheme].filter(Boolean).forEach(el => el.addEventListener("change", sendAppearanceSettings));
+appearanceEditBorder?.addEventListener("click", () => { appearanceEditBorder.classList.toggle("on"); sendAppearanceSettings(); });
+document.getElementById("resetAppearanceButton")?.addEventListener("click", () => { applyAppearanceSettings({ primaryColor:"#9147ff", textScale:"medium", theme:"dark", overlayEditBorder:true }); sendAppearanceSettings(); window.showToast("Оформление сброшено"); });
+window.electronAPI?.getAppearanceSettings?.().then(applyAppearanceSettings).catch(console.error);
+window.electronAPI?.onAppearanceSettings?.(applyAppearanceSettings);
+
+/* =========================
+   HOTKEYS
+========================= */
+const hotkeyElements = {
+    toggleOverlay: document.getElementById("hotkeyToggleOverlay"),
+    showSettings: document.getElementById("hotkeyShowSettings"),
+    editOverlay: document.getElementById("hotkeyEditOverlay")
+};
+let hotkeyState = { toggleOverlay: "CommandOrControl+Shift+O", showSettings: "CommandOrControl+Shift+S", editOverlay: "CommandOrControl+Shift+M" };
+function acceleratorToDisplay(accelerator) {
+    return String(accelerator || "").replaceAll("CommandOrControl", "Ctrl").replaceAll("Control", "Ctrl").replaceAll("Alt", "Alt").replaceAll("Shift", "Shift").replaceAll("Plus", "+").split("+").map(p => p === "SPACE" ? "Space" : p.length === 1 ? p.toUpperCase() : p).join(" + ");
+}
+function eventToAccelerator(event) {
+    const parts = [];
+    if (event.ctrlKey || event.metaKey) parts.push("CommandOrControl");
+    if (event.altKey) parts.push("Alt");
+    if (event.shiftKey) parts.push("Shift");
+    const ignored = ["Control","Shift","Alt","Meta","OS","CapsLock","NumLock","ScrollLock","Fn"];
+    let key = event.key;
+    if (ignored.includes(key)) return null;
+    if (key === " ") key = "Space";
+    else if (key.startsWith("F") && /^F([1-9]|1[0-9]|2[0-4])$/.test(key)) {}
+    else if (key.startsWith("Arrow")) key = key.replace("Arrow", "");
+    else if (key === "Escape") key = "Esc";
+    else if (key === "Enter") key = "Enter";
+    else if (key === "Backspace") key = "Backspace";
+    else if (key === "Delete") key = "Delete";
+    else if (key === "Tab") key = "Tab";
+    else if (key.length === 1) key = key.toUpperCase();
+    else if (!/^[A-Za-z0-9]+$/.test(key)) return null;
+    if (!parts.length) return null;
+    parts.push(key);
+    return parts.join("+");
+}
+function applyHotkeys(settings) { hotkeyState = { ...settings }; Object.entries(hotkeyElements).forEach(([action, el]) => { if (el) el.textContent = acceleratorToDisplay(hotkeyState[action]); }); }
+Object.entries(hotkeyElements).forEach(([action, el]) => {
+    el?.addEventListener("keydown", (event) => {
+        event.preventDefault(); event.stopPropagation();
+        if (event.key === "Escape") { applyHotkeys(hotkeyState); el.classList.remove("recording"); return; }
+        const accelerator = eventToAccelerator(event);
+        if (!accelerator) return;
+        const duplicate = Object.entries(hotkeyState).some(([a, v]) => a !== action && v === accelerator);
+        if (duplicate) {
+            applyHotkeys(hotkeyState);
+            el.classList.remove("recording");
+            window.showToast("Эта комбинация уже используется");
+            return;
+        }
+        hotkeyState[action] = accelerator; el.textContent = acceleratorToDisplay(accelerator); el.classList.remove("recording");
+        window.electronAPI?.setHotkeys?.(hotkeyState);
+    });
+    el?.addEventListener("click", () => { el.classList.add("recording"); el.focus(); el.textContent = "Нажмите комбинацию…"; });
+});
+window.electronAPI?.getHotkeys?.().then(applyHotkeys).catch(console.error);
+window.electronAPI?.onHotkeys?.(applyHotkeys);
+window.electronAPI?.onHotkeysSaveResult?.(result => { if (!result.success) {
+        window.showToast(result.error || "Не удалось сохранить горячую клавишу");
+        // Возвращаем фактически зарегистрированные комбинации.
+        window.electronAPI?.getHotkeys?.().then(applyHotkeys).catch(console.error);
+        Object.values(hotkeyElements).forEach((el) => el?.classList.remove("recording"));
+    } else {
+        applyHotkeys(result.settings || hotkeyState);
+        window.showToast("Горячая клавиша сохранена");
+    }
+});
+document.getElementById("resetHotkeysButton")?.addEventListener("click", () => { hotkeyState = { toggleOverlay: "CommandOrControl+Shift+O", showSettings: "CommandOrControl+Shift+S", editOverlay: "CommandOrControl+Shift+M" }; applyHotkeys(hotkeyState); window.electronAPI?.setHotkeys?.(hotkeyState); });
+/* =========================
+   PROFILES
+========================= */
+
+const profilesList =
+    document.getElementById("profilesList");
+
+const activeProfileDescription =
+    document.getElementById(
+        "activeProfileDescription"
+    );
+
+let profilesState = {
+    activeProfile:
+        "Основной профиль",
+
+    profiles: {}
+};
+
+
+function renderProfiles(data) {
+
+    if (!data) {
+        return;
+    }
+
+
+    profilesState =
+        data;
+
+
+    if (activeProfileDescription) {
+
+        activeProfileDescription.textContent =
+            data.activeProfile ||
+            "Основной профиль";
+
+    }
+
+
+    if (!profilesList) {
+        return;
+    }
+
+
+    profilesList.innerHTML = "";
+
+
+    const profileNames =
+        Object.keys(
+            data.profiles || {}
+        );
+
+
+    for (
+        const name of profileNames
+    ) {
+
+        const row =
+            document.createElement(
+                "div"
+            );
+
+        row.className =
+            "profile";
+
+
+        const info =
+            document.createElement(
+                "div"
+            );
+
+
+        const profileName =
+            document.createElement(
+                "div"
+            );
+
+        profileName.className =
+            "profile-name";
+
+        profileName.textContent =
+            name;
+
+
+        const profileInfo =
+            document.createElement(
+                "div"
+            );
+
+        profileInfo.className =
+            "profile-info";
+
+        profileInfo.textContent =
+            name ===
+            data.activeProfile
+                ? "Используется сейчас"
+                : "Профиль Overlay";
+
+
+        info.appendChild(
+            profileName
+        );
+
+        info.appendChild(
+            profileInfo
+        );
+
+
+        const actions =
+            document.createElement(
+                "div"
+            );
+
+        actions.className =
+            "profile-actions";
+
+
+        /* =====================
+           ВЫБРАТЬ
+        ===================== */
+
+        const select =
+            document.createElement(
+                "button"
+            );
+
+        select.className =
+            "small-button";
+
+        select.textContent =
+            name === data.activeProfile
+                ? "Активен"
+                : "Выбрать";
+
+        select.disabled =
+            name === data.activeProfile;
+
+
+        if (
+            name !==
+            data.activeProfile
+        ) {
+
+            select.addEventListener(
+                "click",
+                () => {
+
+                    window.electronAPI
+                        ?.selectProfile
+                        ?.(
+                            name
+                        );
+
+                }
+            );
+
+        }
+
+
+        /* =====================
+           ПЕРЕИМЕНОВАТЬ
+        ===================== */
+
+        const rename =
+            document.createElement(
+                "button"
+            );
+
+        rename.className =
+            "small-button";
+
+        rename.textContent =
+            "Переименовать";
+
+
+        rename.addEventListener(
+            "click",
+            async () => {
+
+                const newName = prompt(
+    "Введите новое название профиля:",
+    name
+);
+
+if (!newName) {
+    return;
+}
+
+const trimmedName =
+    newName.trim();
+
+if (!trimmedName) {
+    return;
+}
+
+window.electronAPI
+    ?.renameProfile
+    ?.(
+        name,
+        trimmedName
+    );
+
+
+                if (
+                    result?.success
+                ) {
+
+                    window.showToast?.(
+                        "Профиль переименован"
+                    );
+
+                }
+
+            }
+        );
+
+
+        actions.appendChild(
+            select
+        );
+
+        actions.appendChild(
+            rename
+        );
+
+
+        /* =====================
+           УДАЛИТЬ
+        ===================== */
+
+        if (
+            name !==
+            "Основной профиль"
+        ) {
+
+            const del =
+                document.createElement(
+                    "button"
+                );
+
+            del.className =
+                "small-button";
+
+            del.textContent =
+                "Удалить";
+
+
+            del.addEventListener(
+                "click",
+                async () => {
+const confirmed =
+    confirm(
+        `Удалить профиль "${name}"?`
+    );
+
+
+                    if (
+                        confirmed
+                    ) {
+
+                        window.electronAPI
+                            ?.deleteProfile
+                            ?.(
+                                name
+                            );
+
+                    }
+
+                }
+            );
+
+
+            actions.appendChild(
+                del
+            );
+
+        }
+
+
+        row.appendChild(
+            info
+        );
+
+        row.appendChild(
+            actions
+        );
+
+
+        profilesList.appendChild(
+            row
+        );
+
+    }
+
+}
+
+
+/* =========================
+   СОЗДАТЬ ПРОФИЛЬ
+========================= */
+
+document
+    .getElementById(
+        "createProfileButton"
+    )
+    ?.addEventListener(
+        "click",
+        async () => {
+const name =
+    prompt(
+        "Введите название нового профиля:"
+    );
+
+if (!name) {
+    return;
+}
+
+const trimmedName =
+    name.trim();
+
+if (!trimmedName) {
+    return;
+}
+
+window.electronAPI
+    ?.createProfile
+    ?.(
+        trimmedName
+    );
+
+
+            if (
+                result?.success
+            ) {
+
+                window.showToast?.(
+                    "Профиль создан"
+                );
+
+            }
+
+        }
+    );
+
+
+/* =========================
+   СОХРАНИТЬ ПРОФИЛЬ
+========================= */
+
+document
+    .getElementById(
+        "saveCurrentProfileButton"
+    )
+    ?.addEventListener(
+        "click",
+        () => {
+
+            window.electronAPI
+                ?.updateCurrentProfile
+                ?.();
+
+        }
+    );
+
+
+/* =========================
+   ЗАГРУЗКА ПРОФИЛЕЙ
+========================= */
+
+window.electronAPI
+    ?.getProfiles
+    ?.()
+    .then(
+        renderProfiles
+    )
+    .catch(
+        console.error
+    );
+
+
+/* =========================
+   РЕЗУЛЬТАТ ОПЕРАЦИЙ
+========================= */
+
+window.electronAPI
+    ?.onProfilesResult
+    ?.(
+        (result) => {
+
+            if (
+                !result?.success
+            ) {
+
+                window.showToast?.(
+                    result?.error ||
+                    "Ошибка профиля"
+                );
+
+                return;
+
+            }
+
+
+            renderProfiles(
+                result.profiles
+            );
+
+            window.showToast?.(
+                "Профили обновлены"
+            );
+
+        }
+    );
+const twitchStatus = document.getElementById("twitchStatus");
+const chatStatus = document.getElementById("chatStatus");
+const twitchChatEnabled = document.getElementById("twitchChatEnabled");
+const twitchLogin = document.getElementById("twitchLogin");
+const connectChatButton = document.getElementById("connectChatButton");
+const chatChannelMode =
+    document.getElementById("chatChannelMode");
+
+const otherChatChannel =
+    document.getElementById("otherChatChannel");
+    function updateChatChannelMode() {
+
+    if (!chatChannelMode || !otherChatChannel) {
+        return;
+    }
+
+    if (chatChannelMode.value === "other") {
+
+        otherChatChannel.style.display =
+            "inline-block";
+
+    } else {
+
+        otherChatChannel.style.display =
+            "none";
+
+    }
+}
+
+
+chatChannelMode?.addEventListener(
+    "change",
+    updateChatChannelMode
+);
+
+
+updateChatChannelMode();
+const launchOverlayButton = document.getElementById("launchOverlayButton");
+const editOverlayButton = document.getElementById("editOverlayButton");
+const closeOverlayButton = document.getElementById("closeOverlayButton");
+const twitchTest = document.getElementById("twitchTest");
+function setStatus(el, ok, text) { if (!el) return; el.innerHTML = `<span class="status-dot"></span>${text}`; el.querySelector(".status-dot").style.background = ok ? "#35c46a" : "#d59c31"; }
+async function refreshTwitchStatus() { try { const s = await window.electronAPI?.getTwitchSessionStatus?.(); const ok = Boolean(s?.connected); setStatus(twitchStatus, ok, ok ? `Подключено: ${s.username || "Twitch"}` : "Не подключено"); if (twitchLogin) twitchLogin.textContent = ok ? "Выйти из Twitch" : "Войти через Twitch"; if (connectChatButton) connectChatButton.disabled = !ok; } catch(e) { setStatus(twitchStatus,false,"Ошибка проверки"); } }
+twitchLogin?.addEventListener("click", () => { if (twitchLogin.textContent.includes("Выйти")) window.electronAPI?.twitchLogout?.(); else window.electronAPI?.twitchLogin?.(); });
+connectChatButton?.addEventListener(
+    "click",
+    async () => {
+
+        connectChatButton.disabled =
+            true;
+
+        try {
+
+            let channel = null;
+
+
+            if (
+                chatChannelMode?.value ===
+                "other"
+            ) {
+
+                channel =
+                    otherChatChannel?.value
+                        ?.trim()
+                        ?.replace(/^#/, "")
+                        ?.toLowerCase();
+
+
+                if (!channel) {
+
+                    window.showToast?.(
+                        "Введите название Twitch-канала"
+                    );
+
+                    return;
+
+                }
+
+            }
+
+
+            const result =
+                await window.electronAPI
+                    ?.connectTwitchChat
+                    ?.(
+                        channel
+                    );
+
+
+            if (
+                !result?.success
+            ) {
+
+                window.showToast?.(
+                    result?.error ||
+                    "Не удалось подключить чат"
+                );
+
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Twitch chat connection error:",
+                error
+            );
+
+            window.showToast?.(
+                error?.message ||
+                "Ошибка подключения к Twitch-чату"
+            );
+
+        } finally {
+
+            connectChatButton.disabled =
+                false;
+
+        }
+
+    }
+);
+launchOverlayButton?.addEventListener("click", () => window.electronAPI?.openOverlay?.());
+editOverlayButton?.addEventListener("click", () => window.electronAPI?.editOverlay?.());
+closeOverlayButton?.addEventListener("click", () => window.electronAPI?.closeOverlay?.());
+twitchTest?.addEventListener("click", async () => { const s = await window.electronAPI?.getTwitchSessionStatus?.(); if (!s?.connected) window.showToast("Сначала войдите в Twitch"); else window.showToast(`Аккаунт Twitch: ${s.username || "подключён"}`); });
+window.electronAPI?.onTwitchLoginStarted?.(data => { if (data?.userCode) window.showToast(`Код Twitch: ${data.userCode}`); });
+window.electronAPI?.onTwitchLoginSuccess?.(() => { window.showToast("Twitch подключён"); refreshTwitchStatus(); });
+window.electronAPI?.onTwitchLoggedOut?.(() => { setStatus(twitchStatus,false,"Не подключено"); if (twitchLogin) twitchLogin.textContent="Войти через Twitch"; });
+window.electronAPI?.onTwitchSessionRestored?.(refreshTwitchStatus);
+window.electronAPI?.onTwitchChatConnected?.(data => { setStatus(chatStatus,true,`Подключено: ${data?.channel || "канал"}`); if (connectChatButton) connectChatButton.textContent="Переподключить чат"; });
+window.electronAPI?.onTwitchChatDisconnected?.(() => { setStatus(chatStatus,false,"Не подключено"); if (connectChatButton) connectChatButton.textContent="Подключить чат"; });
+twitchChatEnabled?.addEventListener("click", async () => { twitchChatEnabled.classList.toggle("on"); if (!twitchChatEnabled.classList.contains("on")) { await window.electronAPI?.disconnectTwitchChat?.(); } else { const r = await window.electronAPI?.connectTwitchChat?.(); if (!r?.success) { twitchChatEnabled.classList.remove("on"); window.showToast(r?.error || "Не удалось подключить чат"); } } });
+refreshTwitchStatus();
+
+/* =========================
+   EMOTE PAGE
+========================= */
+const emotesTwitchEnabled = document.getElementById("emotesTwitchEnabled");
+const emotesBttvEnabled = document.getElementById("emotesBttvEnabled");
+const emotes7tvEnabled = document.getElementById("emotes7tvEnabled");
+const emotesSize = document.getElementById("emotesSize");
+const emotesAnimatedEnabled = document.getElementById("emotesAnimatedEnabled");
+const emotesUnicodeEnabled = document.getElementById("emotesUnicodeEnabled");
+const emotesStatus = document.getElementById("emotesStatus");
+function emoteState(el, fallback=true) { return el ? el.classList.contains("on") : fallback; }
+function applyEmotePage(settings) { if (!settings) return; if (emotesSize) emotesSize.value=String(settings.emoteSize||30); [[emotesTwitchEnabled,settings.showTwitchEmotes!==false],[emotesBttvEnabled,settings.showBttvEmotes!==false],[emotes7tvEnabled,settings.show7tvEmotes!==false],[emotesAnimatedEnabled,settings.animatedEmotes!==false],[emotesUnicodeEnabled,settings.showUnicodeEmotes!==false]].forEach(([e,v])=>e?.classList.toggle("on",Boolean(v))); }
+function sendEmotePage() { sendOverlaySettings(); }
+[emotesTwitchEnabled,emotesBttvEnabled,emotes7tvEnabled,emotesAnimatedEnabled,emotesUnicodeEnabled].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendEmotePage();}));
+emotesSize?.addEventListener("change", () => {
+    // Размер на странице «Эмодзи» и размер в настройках сообщений
+    // используют одно значение overlaySettings.emoteSize.
+    if (emoteSize) emoteSize.value = emotesSize.value;
+    sendOverlaySettings();
+});
+window.electronAPI?.onOverlaySettings?.(applyEmotePage);
+if (window.electronAPI?.getOverlaySettings) window.electronAPI.getOverlaySettings().then(applyEmotePage).catch(console.error);
+window.electronAPI?.onThirdPartyEmotesLoaded?.(data=>{ if(emotesStatus) { emotesStatus.innerHTML=`<span class="status-dot" style="background:#35c46a"></span>BTTV: ${data?.bttv || 0} · 7TV: ${data?.sevenTv || 0}`; } });
+
+
+/* =========================
+   OVERLAY CHAT SETTINGS
+========================= */
+const opacitySlider = document.getElementById("opacitySlider");
+const opacityValue = document.getElementById("opacityValue");
+const chatFontSize = document.getElementById("chatFontSize");
+const chatMaxMessages = document.getElementById("chatMaxMessages");
+const chatMessageDuration = document.getElementById("chatMessageDuration");
+const chatUsernameColor = document.getElementById("chatUsernameColor");
+const chatUsernameStyle = document.getElementById("chatUsernameStyle");
+const chatHorizontal = document.getElementById("chatHorizontal");
+const chatVertical = document.getElementById("chatVertical");
+const messageBackgroundEnabled = document.getElementById("messageBackgroundEnabled");
+const messageBackgroundOpacity = document.getElementById("messageBackgroundOpacity");
+const messageBorderRadius = document.getElementById("messageBorderRadius");
+const messagePadding = document.getElementById("messagePadding");
+const messageGap = document.getElementById("messageGap");
+const textShadowEnabled = document.getElementById("textShadowEnabled");
+const emoteSize = document.getElementById("emoteSize");
+const badgeSize = document.getElementById("badgeSize");
+const emoteSpacing = document.getElementById("emoteSpacing");
+const showTwitchEmotes = document.getElementById("showTwitchEmotes");
+const showBadges = document.getElementById("showBadges");
+const messageEnterEnabled = document.getElementById("messageEnterEnabled");
+const messageEnterType = document.getElementById("messageEnterType");
+const messageEnterDuration = document.getElementById("messageEnterDuration");
+const messageExitEnabled = document.getElementById("messageExitEnabled");
+const messageExitType = document.getElementById("messageExitType");
+const messageExitDuration = document.getElementById("messageExitDuration");
+function switchState(el, fallback=false){ return el ? el.classList.contains("on") : fallback; }
+function collectOverlaySettings(){ return {
+fontSize:Number(chatFontSize?.value)||20,
+opacity: Number.isFinite(Number(opacitySlider?.value)) ? Number(opacitySlider.value) : 85,
+maxMessages:Number(chatMaxMessages?.value)||10,
+messageDuration:Number(chatMessageDuration?.value)||30,
+usernameColor:chatUsernameColor?.value||"#ffffff", usernameStyle:chatUsernameStyle?.value||"bold",
+chatHorizontal:chatHorizontal?.value||"left", chatVertical:chatVertical?.value||"top",
+messageBackgroundEnabled:switchState(messageBackgroundEnabled,false), messageBackgroundOpacity:Number(messageBackgroundOpacity?.value)||70,
+messageBorderRadius:Number(messageBorderRadius?.value)||6, messagePadding:Number(messagePadding?.value)||2, messageGap:Number(messageGap?.value)||5,
+textShadowEnabled:switchState(textShadowEnabled,true), emoteSize:Number(emoteSize?.value)||30, badgeSize:Number(badgeSize?.value)||20,
+emoteSpacing:Number(emoteSpacing?.value)||2, showTwitchEmotes:switchState(showTwitchEmotes,true), showBadges:switchState(showBadges,true),
+showBttvEmotes:switchState(emotesBttvEnabled,true), show7tvEmotes:switchState(emotes7tvEnabled,true), animatedEmotes:switchState(emotesAnimatedEnabled,true), showUnicodeEmotes:switchState(emotesUnicodeEnabled,true),
+messageEnterEnabled:switchState(messageEnterEnabled,true), messageEnterType:messageEnterType?.value||"fade",
+messageEnterDuration:Number(messageEnterDuration?.value)||0.2, messageExitEnabled:switchState(messageExitEnabled,true),
+messageExitType:messageExitType?.value||"fade", messageExitDuration:Number(messageExitDuration?.value)||0.25
+}; }
+function applySettingsToPanel(settings){ if(!settings)return; const setN=(e,v,min,max,d)=>{if(!e)return;let n=Number(v);if(!Number.isFinite(n))n=d;e.value=Math.max(min,Math.min(max,n));};
+setN(chatFontSize,settings.fontSize,10,100,20);setN(opacitySlider,settings.opacity,0,100,85);setN(chatMaxMessages,settings.maxMessages,1,100,10);setN(chatMessageDuration,settings.messageDuration,1,600,30);
+setN(messageEnterDuration,settings.messageEnterDuration,0.1,2,0.2);setN(messageExitDuration,settings.messageExitDuration,0.1,2,0.25);
+if(messageEnterType)messageEnterType.value=["fade","left","right","top","bottom","scale","none"].includes(settings.messageEnterType)?settings.messageEnterType:"fade";
+if(messageExitType)messageExitType.value=["fade","left","right","top","bottom","scale","none"].includes(settings.messageExitType)?settings.messageExitType:"fade";
+[messageEnterEnabled,messageExitEnabled].forEach((e)=>{if(e)e.classList.toggle("on",settings[e===messageEnterEnabled?"messageEnterEnabled":"messageExitEnabled"]!==false);});
+setN(messageBackgroundOpacity,settings.messageBackgroundOpacity,0,100,70);setN(messageBorderRadius,settings.messageBorderRadius,0,50,6);setN(messagePadding,settings.messagePadding,0,50,2);setN(messageGap,settings.messageGap,0,50,5);
+setN(emoteSize,settings.emoteSize,16,100,30);setN(badgeSize,settings.badgeSize,12,60,20);setN(emoteSpacing,settings.emoteSpacing,0,20,2);
+if(opacityValue&&opacitySlider){opacityValue.textContent=opacitySlider.value+"%";opacitySlider.style.setProperty("--value",opacitySlider.value+"%");}
+if(chatUsernameColor)chatUsernameColor.value=settings.usernameColor||"#ffffff";if(chatUsernameStyle)chatUsernameStyle.value=settings.usernameStyle||"bold";if(chatHorizontal)chatHorizontal.value=settings.chatHorizontal||"left";if(chatVertical)chatVertical.value=settings.chatVertical||"top";
+[[messageBackgroundEnabled,settings.messageBackgroundEnabled],[textShadowEnabled,settings.textShadowEnabled!==false],[showTwitchEmotes,settings.showTwitchEmotes!==false],[showBadges,settings.showBadges!==false]].forEach(([e,v])=>{if(e)e.classList.toggle("on",Boolean(v));});
+[[emotesTwitchEnabled,settings.showTwitchEmotes!==false],[emotesBttvEnabled,settings.showBttvEmotes!==false],[emotes7tvEnabled,settings.show7tvEmotes!==false],[emotesAnimatedEnabled,settings.animatedEmotes!==false],[emotesUnicodeEnabled,settings.showUnicodeEmotes!==false]].forEach(([e,v])=>{if(e)e.classList.toggle("on",Boolean(v));});
+if(emotesSize)emotesSize.value=String(settings.emoteSize||30); }
+function sendOverlaySettings(){ if(window.electronAPI?.setOverlaySettings) window.electronAPI.setOverlaySettings(collectOverlaySettings()); }
+[opacitySlider,chatFontSize,chatMaxMessages,chatMessageDuration,chatUsernameColor,chatUsernameStyle,chatHorizontal,chatVertical,messageBackgroundOpacity,messageBorderRadius,messagePadding,messageGap,emoteSize,badgeSize,emoteSpacing,messageEnterType,messageEnterDuration,messageExitType,messageExitDuration].filter(Boolean).forEach(e=>{e.addEventListener("input",()=>{if(e===opacitySlider&&opacityValue){opacityValue.textContent=e.value+"%";e.style.setProperty("--value",e.value+"%");}sendOverlaySettings();});e.addEventListener("change",sendOverlaySettings);});
+[messageBackgroundEnabled,textShadowEnabled,showTwitchEmotes,showBadges,messageEnterEnabled,messageExitEnabled].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendOverlaySettings();}));
+if(window.electronAPI?.getOverlaySettings)window.electronAPI.getOverlaySettings().then(applySettingsToPanel).catch(e=>console.error("Ошибка загрузки настроек Overlay:",e));
+if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(applySettingsToPanel);
+</script>
+</body>
+</html>

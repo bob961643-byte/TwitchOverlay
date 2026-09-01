@@ -1,0 +1,2905 @@
+const {
+    app,
+    BrowserWindow,
+    ipcMain,
+    safeStorage,
+    screen,
+    nativeTheme,
+    globalShortcut,
+    shell,
+    dialog
+} = require("electron");
+const path = require("path");
+const fs = require("fs");
+const tmi = require("tmi.js");
+
+let mainWindow = null;
+let overlayWindow = null;
+let overlayReady = false;
+let overlayEditing = false;
+let pendingOverlayMessages = [];
+
+let twitchClient = null;
+let twitchToken = null;
+let connectedChannel = null;
+
+let badgeImagesCache = {};
+let badgeImagesCacheChannel = null;
+let thirdPartyEmoteCache = { bttv: {}, sevenTv: {} };
+let thirdPartyEmoteCacheChannel = null;
+
+const CLIENT_ID = "4u1wcqhcjw7ydzd933olj4yiouic7i";
+
+const TOKEN_FILE = "twitch-token.dat";
+
+
+/* =========================
+   TOKEN
+========================= */
+
+function getTokenPath() {
+    return path.join(
+        app.getPath("userData"),
+        TOKEN_FILE
+    );
+}
+
+
+function saveTwitchToken(tokenData) {
+
+    try {
+
+        const json =
+            JSON.stringify(tokenData);
+
+        let data;
+
+        if (
+            safeStorage.isEncryptionAvailable()
+        ) {
+
+            data =
+                safeStorage.encryptString(
+                    json
+                );
+
+        } else {
+
+            data =
+                Buffer.from(
+                    json,
+                    "utf8"
+                );
+
+        }
+
+        fs.writeFileSync(
+            getTokenPath(),
+            data
+        );
+
+        twitchToken =
+            tokenData;
+
+    } catch (error) {
+
+        console.error(
+            "Ошибка сохранения Twitch token:",
+            error
+        );
+
+    }
+}
+
+
+function loadTwitchToken() {
+
+    try {
+
+        const filePath =
+            getTokenPath();
+
+        if (
+            !fs.existsSync(filePath)
+        ) {
+
+            return null;
+
+        }
+
+        const data =
+            fs.readFileSync(
+                filePath
+            );
+
+        let json;
+
+        if (
+            safeStorage.isEncryptionAvailable()
+        ) {
+
+            json =
+                safeStorage.decryptString(
+                    data
+                );
+
+        } else {
+
+            json =
+                data.toString(
+                    "utf8"
+                );
+
+        }
+
+        twitchToken =
+            JSON.parse(json);
+
+        return twitchToken;
+
+    } catch (error) {
+
+        console.error(
+            "Ошибка загрузки Twitch token:",
+            error
+        );
+
+        return null;
+
+    }
+}
+
+
+function deleteTwitchToken() {
+
+    try {
+
+        const filePath =
+            getTokenPath();
+
+        if (
+            fs.existsSync(filePath)
+        ) {
+
+            fs.unlinkSync(
+                filePath
+            );
+
+        }
+
+        twitchToken = null;
+
+    } catch (error) {
+
+        console.error(
+            "Ошибка удаления Twitch token:",
+            error
+        );
+
+    }
+}
+
+
+/* =========================
+   TWITCH TOKEN VALIDATION
+========================= */
+
+async function validateTwitchToken() {
+
+    if (
+        !twitchToken?.accessToken
+    ) {
+
+        return false;
+
+    }
+
+    try {
+
+        const response =
+            await fetch(
+                "https://id.twitch.tv/oauth2/validate",
+                {
+                    headers: {
+                        Authorization:
+                            `OAuth ${twitchToken.accessToken}`
+                    }
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !response.ok
+        ) {
+
+            return false;
+
+        }
+
+
+        if (data.login) {
+
+            twitchToken.username =
+                data.login;
+
+        }
+
+
+        if (data.user_id) {
+
+            twitchToken.userId =
+                data.user_id;
+
+        }
+
+
+        saveTwitchToken(
+            twitchToken
+        );
+
+
+        return true;
+
+    } catch (error) {
+
+        console.error(
+            "Ошибка проверки Twitch:",
+            error
+        );
+
+        return false;
+
+    }
+}
+
+
+/* =========================
+   TWITCH LOGIN
+========================= */
+
+async function startTwitchLogin() {
+
+    try {
+
+        const response =
+            await fetch(
+                "https://id.twitch.tv/oauth2/device",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/x-www-form-urlencoded"
+                    },
+
+                    body:
+                        new URLSearchParams({
+
+                            client_id:
+                                CLIENT_ID,
+
+                            scopes:
+                                "chat:read chat:edit"
+
+                        })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                data.message ||
+                "Ошибка авторизации Twitch"
+            );
+
+        }
+
+
+        if (mainWindow) {
+
+            mainWindow.webContents.send(
+                "twitch-login-started",
+                {
+
+                    userCode:
+                        data.user_code,
+
+                    verificationUri:
+                        data.verification_uri,
+
+                    expiresIn:
+                        data.expires_in
+
+                }
+            );
+
+        }
+
+        try {
+            await shell.openExternal(data.verification_uri);
+        } catch (error) {
+            console.error("Не удалось открыть страницу Twitch:", error);
+        }
+
+
+        await pollTwitchToken(
+            data.device_code,
+            data.interval || 5
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            "Twitch login error:",
+            error
+        );
+
+
+        if (mainWindow) {
+
+            mainWindow.webContents.send(
+                "twitch-login-error",
+                error.message
+            );
+
+        }
+
+    }
+}
+
+
+async function pollTwitchToken(
+    deviceCode,
+    interval
+) {
+
+    const startTime =
+        Date.now();
+
+    const timeout =
+        15 * 60 * 1000;
+
+
+    while (
+        Date.now() - startTime <
+        timeout
+    ) {
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    interval * 1000
+                )
+        );
+
+
+        const response =
+            await fetch(
+                "https://id.twitch.tv/oauth2/token",
+                {
+
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/x-www-form-urlencoded"
+                    },
+
+                    body:
+                        new URLSearchParams({
+
+                            client_id:
+                                CLIENT_ID,
+
+                            device_code:
+                                deviceCode,
+
+                            grant_type:
+                                "urn:ietf:params:oauth:grant-type:device_code"
+
+                        })
+
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            data.access_token
+        ) {
+
+            twitchToken = {
+
+                accessToken:
+                    data.access_token,
+
+                refreshToken:
+                    data.refresh_token
+
+            };
+
+
+            await validateTwitchToken();
+
+
+            if (mainWindow) {
+
+                mainWindow.webContents.send(
+                    "twitch-login-success"
+                );
+
+            }
+
+
+            return;
+
+        }
+
+
+        if (
+            data.message ===
+            "authorization_pending"
+        ) {
+
+            continue;
+
+        }
+
+
+        if (
+            data.message ===
+            "slow_down"
+        ) {
+
+            interval += 5;
+
+            continue;
+
+        }
+
+
+        throw new Error(
+            data.message ||
+            "Авторизация Twitch не удалась"
+        );
+
+    }
+
+
+    throw new Error(
+        "Время авторизации Twitch истекло"
+    );
+}
+
+
+/* =========================
+   OVERLAY
+========================= */
+/* =========================
+   OVERLAY BOUNDS STORAGE
+========================= */
+
+
+
+const overlayBoundsFile =
+    path.join(
+        app.getPath("userData"),
+        "overlay-bounds.json"
+    );
+
+
+const overlaySettingsFile =
+    path.join(
+        app.getPath("userData"),
+        "overlay-settings.json"
+    );
+
+const defaultOverlaySettings = {
+    fontSize: 20, opacity: 85, maxMessages: 10, messageDuration: 30,
+    usernameColor: "#ffffff", usernameStyle: "bold",
+    chatHorizontal: "left", chatVertical: "top",
+    messageBackgroundEnabled: false, messageBackgroundOpacity: 70,
+    messageBorderRadius: 6, messagePadding: 2, messageGap: 5,
+    textShadowEnabled: true, emoteSize: 30, badgeSize: 20,
+    emoteSpacing: 2, showTwitchEmotes: true, showBadges: true,
+    showBttvEmotes: true, show7tvEmotes: true, animatedEmotes: true, showUnicodeEmotes: true,
+    messageEnterEnabled: true, messageEnterType: "fade", messageEnterDuration: 0.2,
+    messageExitEnabled: true, messageExitType: "fade", messageExitDuration: 0.25
+};
+
+function loadOverlaySettings() {
+    try {
+        if (!fs.existsSync(overlaySettingsFile)) {
+            return { ...defaultOverlaySettings };
+        }
+
+        const data = JSON.parse(
+            fs.readFileSync(overlaySettingsFile, "utf8")
+        );
+
+        return {
+            ...defaultOverlaySettings,
+            ...(data && typeof data === "object" ? data : {})
+        };
+    } catch (error) {
+        console.error("Ошибка загрузки настроек Overlay:", error);
+        return { ...defaultOverlaySettings };
+    }
+}
+
+function saveOverlaySettings(settings) {
+    try {
+        fs.writeFileSync(
+            overlaySettingsFile,
+            JSON.stringify(settings, null, 4),
+            "utf8"
+        );
+    } catch (error) {
+        console.error("Ошибка сохранения настроек Overlay:", error);
+    }
+}
+
+let overlaySettings = loadOverlaySettings();
+
+/* =========================
+   GENERAL SETTINGS
+========================= */
+
+const generalSettingsFile =
+    path.join(
+        app.getPath("userData"),
+        "general-settings.json"
+    );
+
+const defaultGeneralSettings = {
+    autoStart: true,
+    checkUpdates: true,
+    language: "Русский",
+    alwaysOnTop: true,
+    showMessageTime: true,
+    hideEmptyMessages: false,
+    autoBackgroundTheme: true,
+    backgroundCheckInterval: 1
+};
+
+function loadGeneralSettings() {
+    try {
+        if (!fs.existsSync(generalSettingsFile)) {
+            return { ...defaultGeneralSettings };
+        }
+
+        const data = JSON.parse(
+            fs.readFileSync(generalSettingsFile, "utf8")
+        );
+
+        return {
+            ...defaultGeneralSettings,
+            ...(data && typeof data === "object" ? data : {})
+        };
+    } catch (error) {
+        console.error("Ошибка загрузки общих настроек:", error);
+        return { ...defaultGeneralSettings };
+    }
+}
+
+function saveGeneralSettings() {
+    try {
+        fs.writeFileSync(
+            generalSettingsFile,
+            JSON.stringify(generalSettings, null, 4),
+            "utf8"
+        );
+    } catch (error) {
+        console.error("Ошибка сохранения общих настроек:", error);
+    }
+}
+
+let generalSettings = loadGeneralSettings();
+
+function normalizeGeneralSettings() {
+    generalSettings.autoStart =
+        Boolean(generalSettings.autoStart);
+
+    generalSettings.checkUpdates =
+        Boolean(generalSettings.checkUpdates);
+
+    if (
+        !["Русский", "English", "Deutsch", "Українська"]
+            .includes(generalSettings.language)
+    ) {
+        generalSettings.language = "Русский";
+    }
+
+    generalSettings.alwaysOnTop =
+        Boolean(generalSettings.alwaysOnTop);
+
+    generalSettings.showMessageTime =
+        Boolean(generalSettings.showMessageTime);
+
+    generalSettings.hideEmptyMessages =
+        Boolean(generalSettings.hideEmptyMessages);
+
+    generalSettings.autoBackgroundTheme =
+        Boolean(generalSettings.autoBackgroundTheme);
+
+    generalSettings.backgroundCheckInterval =
+        Math.max(
+            0.5,
+            Math.min(
+                60,
+                Number(generalSettings.backgroundCheckInterval) || 1
+            )
+        );
+}
+
+normalizeGeneralSettings();
+
+function applyAutoStartSetting() {
+    try {
+        app.setLoginItemSettings({
+            openAtLogin: generalSettings.autoStart,
+            openAsHidden: false
+        });
+    } catch (error) {
+        console.error("Ошибка настройки автозапуска:", error);
+    }
+}
+
+function sendGeneralSettings() {
+    if (
+        !mainWindow ||
+        mainWindow.isDestroyed()
+    ) {
+        return;
+    }
+
+    mainWindow.webContents.send(
+        "general-settings",
+        generalSettings
+    );
+
+    if (
+        overlayWindow &&
+        !overlayWindow.isDestroyed() &&
+        overlayReady
+    ) {
+        overlayWindow.webContents.send(
+            "general-settings",
+            generalSettings
+        );
+    }
+}
+
+async function checkForUpdates() {
+    if (!generalSettings.checkUpdates) {
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            "https://registry.npmjs.org/twitchoverlay/latest"
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+        const data = await response.json();
+        const currentVersion =
+            app.getVersion();
+
+        if (
+            data.version &&
+            data.version !== currentVersion
+        ) {
+            mainWindow?.webContents.send(
+                "update-check-result",
+                {
+                    status: "available",
+                    currentVersion,
+                    latestVersion: data.version
+                }
+            );
+        } else {
+            mainWindow?.webContents.send(
+                "update-check-result",
+                {
+                    status: "up-to-date",
+                    currentVersion
+                }
+            );
+        }
+    } catch (error) {
+        mainWindow?.webContents.send(
+            "update-check-result",
+            {
+                status: "unavailable",
+                currentVersion: app.getVersion(),
+                error: error.message
+            }
+        );
+    }
+}
+
+
+function sendOverlaySettings() {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("overlay-settings", overlaySettings);
+    }
+
+    if (
+        !overlayWindow ||
+        overlayWindow.isDestroyed() ||
+        !overlayReady
+    ) {
+        return;
+    }
+
+    overlayWindow.setOpacity(
+        Math.max(
+            0,
+            Math.min(
+                1,
+                (
+                    Number.isFinite(
+                        Number(overlaySettings.opacity)
+                    )
+                        ? Number(overlaySettings.opacity)
+                        : 85
+                ) / 100
+            )
+        )
+    );
+
+    overlayWindow.webContents.send(
+        "overlay-settings",
+        overlaySettings
+    );
+}
+
+
+function loadOverlayBounds() {
+
+    try {
+
+        if (
+            !fs.existsSync(
+                overlayBoundsFile
+            )
+        ) {
+
+            return null;
+
+        }
+
+
+        const data =
+            fs.readFileSync(
+                overlayBoundsFile,
+                "utf8"
+            );
+
+
+        const bounds =
+            JSON.parse(data);
+
+
+        if (
+            typeof bounds.x !== "number" ||
+            typeof bounds.y !== "number" ||
+            typeof bounds.width !== "number" ||
+            typeof bounds.height !== "number"
+        ) {
+
+            return null;
+
+        }
+
+
+        return bounds;
+
+    } catch (error) {
+
+        console.error(
+            "Ошибка загрузки позиции Overlay:",
+            error
+        );
+    return null;
+
+    }
+
+}
+
+
+/* =========================
+   SAVE OVERLAY BOUNDS
+========================= */
+
+function saveOverlayBounds() {
+
+    if (
+        !overlayWindow ||
+        overlayWindow.isDestroyed()
+    ) {
+
+        return;
+
+    }
+
+
+    try {
+
+        const bounds =
+            overlayWindow.getBounds();
+
+
+        fs.writeFileSync(
+            overlayBoundsFile,
+            JSON.stringify(
+                {
+                    x:
+                        bounds.x,
+
+                    y:
+                        bounds.y,
+
+                    width:
+                        bounds.width,
+
+                    height:
+                        bounds.height
+                },
+                null,
+                4
+            ),
+            "utf8"
+        );
+
+
+        console.log(
+            "Overlay position/size saved:",
+            bounds
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Ошибка сохранения позиции Overlay:",
+            error
+        );
+
+    }
+
+}
+
+
+function createOverlay() {
+
+    if (
+        overlayWindow &&
+        !overlayWindow.isDestroyed()
+    ) {
+
+        overlayWindow.show();
+
+        return;
+
+    }
+
+
+    const display =
+        screen.getPrimaryDisplay();
+
+    const workArea =
+        display.workArea;
+
+    const initialWidth = 650;
+    const initialHeight = 420;
+
+    const savedOverlayBounds =
+        loadOverlayBounds();
+
+    const useSavedBounds =
+        savedOverlayBounds &&
+        savedOverlayBounds.width >= 300 &&
+        savedOverlayBounds.height >= 150;
+
+    const overlayBounds =
+        useSavedBounds
+            ? savedOverlayBounds
+            : {
+                x: workArea.x + 30,
+                y: workArea.y + 30,
+                width: initialWidth,
+                height: initialHeight
+            };
+
+    overlayReady = false;
+
+    overlayWindow =
+        new BrowserWindow({
+
+            x: overlayBounds.x,
+            y: overlayBounds.y,
+            width: overlayBounds.width,
+            height: overlayBounds.height,
+
+            minWidth:
+                300,
+
+            minHeight:
+                150,
+
+            frame:
+                false,
+
+            transparent:
+                true,
+
+            backgroundColor:
+                "#00000000",
+
+            hasShadow:
+                false,
+
+            resizable:
+                false,
+
+            movable:
+                false,
+
+            minimizable:
+                false,
+
+            maximizable:
+                false,
+
+            closable:
+                false,
+
+            skipTaskbar:
+                true,
+
+            focusable:
+                false,
+
+            fullscreenable:
+                false,
+
+            alwaysOnTop:
+                generalSettings.alwaysOnTop,
+
+            webPreferences: {
+
+                preload:
+                    path.resolve(
+                        __dirname,
+                        "overlay-preload.js"
+                    ),
+
+                contextIsolation:
+                    true,
+
+                nodeIntegration:
+                    false,
+
+                sandbox:
+                    false
+
+            }
+
+        });
+
+
+    overlayWindow.setAlwaysOnTop(
+        generalSettings.alwaysOnTop,
+        "floating"
+    );
+
+
+    overlayWindow.setIgnoreMouseEvents(
+        true,
+        {
+            forward:
+                true
+        }
+    );
+
+
+    overlayWindow.webContents.on(
+        "preload-error",
+        (
+            event,
+            preloadPath,
+            error
+        ) => {
+
+            console.error(
+                "ОШИБКА PRELOAD:",
+                preloadPath,
+                error
+            );
+
+        }
+    );
+
+
+    overlayWindow.webContents.on(
+        "did-finish-load",
+        () => {
+
+            if (
+                !overlayWindow ||
+                overlayWindow.isDestroyed()
+            ) {
+
+                return;
+
+            }
+
+
+            overlayReady =
+                true;
+
+
+            console.log(
+                "Overlay полностью загружен"
+            );
+
+            sendOverlaySettings();
+
+            overlayWindow.webContents.send(
+                "general-settings",
+                generalSettings
+            );
+
+            overlayWindow.webContents.send(
+                "appearance-settings",
+                appearanceSettings
+            );
+
+
+            overlayWindow.webContents.send(
+                "overlay-edit-mode",
+                overlayEditing
+            );
+
+
+            const queued =
+                pendingOverlayMessages;
+
+            pendingOverlayMessages =
+                [];
+
+
+            for (
+                const queuedMessage
+                of queued
+            ) {
+
+                overlayWindow.webContents.send(
+                    "twitch-chat-message",
+                    queuedMessage
+                );
+
+            }
+
+        }
+    );
+
+
+    overlayWindow.webContents.on(
+        "did-fail-load",
+        (
+            event,
+            errorCode,
+            errorDescription
+        ) => {
+
+            console.error(
+                "Overlay не загрузился:",
+                errorCode,
+                errorDescription
+            );
+
+        }
+    );
+
+
+    overlayWindow.webContents.on(
+        "console-message",
+        (
+            event,
+            level,
+            message
+        ) => {
+
+            console.log(
+                "OVERLAY:",
+                message
+            );
+
+        }
+    );
+
+
+    overlayWindow.loadFile(
+        path.join(
+            __dirname,
+            "public",
+            "overlay.html"
+        )
+    ).catch(
+        (error) => {
+
+            console.error(
+                "Ошибка загрузки Overlay:",
+                error
+            );
+
+        }
+    );
+
+
+    overlayWindow.on(
+        "closed",
+        () => {
+
+            overlayReady =
+                false;
+
+            overlayEditing =
+                false;
+
+            pendingOverlayMessages =
+                [];
+
+            overlayWindow =
+                null;
+
+        }
+    );
+
+}
+
+
+/* =========================
+   SEND MESSAGE TO OVERLAY
+========================= */
+
+function sendMessageToOverlay(
+    message
+) {
+
+    if (
+        !overlayWindow ||
+        overlayWindow.isDestroyed()
+    ) {
+
+        return;
+
+    }
+
+
+    if (!overlayReady) {
+
+        pendingOverlayMessages.push(
+            message
+        );
+
+        while (
+            pendingOverlayMessages.length >
+            50
+        ) {
+
+            pendingOverlayMessages.shift();
+
+        }
+
+        return;
+
+    }
+
+
+    overlayWindow.webContents.send(
+        "twitch-chat-message",
+        message
+    );
+
+}
+
+/* =========================
+   TWITCH BADGES
+========================= */
+
+
+async function loadBadgeImages(channel) {
+
+    const cleanChannel =
+        String(channel || "")
+            .replace(/^#/, "")
+            .trim()
+            .toLowerCase();
+
+    if (
+        cleanChannel &&
+        badgeImagesCacheChannel === cleanChannel &&
+        Object.keys(badgeImagesCache).length > 0
+    ) {
+        return badgeImagesCache;
+    }
+
+    const result = {};
+
+    try {
+
+        const headers = {
+            "Client-ID": CLIENT_ID,
+            "Authorization":
+                `Bearer ${twitchToken.accessToken}`
+        };
+
+        /* Global badges */
+        const globalResponse =
+            await fetch(
+                "https://api.twitch.tv/helix/chat/badges/global",
+                { headers }
+            );
+
+        if (globalResponse.ok) {
+
+            const globalData =
+                await globalResponse.json();
+
+            for (
+                const badgeSet
+                of globalData.data || []
+            ) {
+
+                for (
+                    const version
+                    of badgeSet.versions || []
+                ) {
+
+                    result[
+                        `${badgeSet.set_id}:${version.id}`
+                    ] =
+                        version.image_url_2x ||
+                        version.image_url_1x ||
+                        null;
+
+                }
+
+            }
+
+        }
+
+        /* Channel badges */
+        const userResponse =
+            await fetch(
+                "https://api.twitch.tv/helix/users?login=" +
+                encodeURIComponent(cleanChannel),
+                { headers }
+            );
+
+        if (userResponse.ok) {
+
+            const userData =
+                await userResponse.json();
+
+            const broadcasterId =
+                userData.data?.[0]?.id;
+
+            if (broadcasterId) {
+
+                const channelResponse =
+                    await fetch(
+                        "https://api.twitch.tv/helix/chat/badges?broadcaster_id=" +
+                        encodeURIComponent(broadcasterId),
+                        { headers }
+                    );
+
+                if (channelResponse.ok) {
+
+                    const channelData =
+                        await channelResponse.json();
+
+                    for (
+                        const badgeSet
+                        of channelData.data || []
+                    ) {
+
+                        for (
+                            const version
+                            of badgeSet.versions || []
+                        ) {
+
+                            result[
+                                `${badgeSet.set_id}:${version.id}`
+                            ] =
+                                version.image_url_2x ||
+                                version.image_url_1x ||
+                                null;
+
+                        }
+
+                    }
+
+                }
+
+            }
+
+        }
+
+    } catch (error) {
+
+        console.error(
+            "Ошибка загрузки Twitch badges:",
+            error
+        );
+
+    }
+
+    badgeImagesCache =
+        result;
+
+    badgeImagesCacheChannel =
+        cleanChannel;
+
+    return result;
+}
+
+
+
+/* =========================
+   THIRD-PARTY EMOTES
+========================= */
+
+function pickEmoteUrl(host, animated = true) {
+    if (!host) return null;
+    const base = String(host.url || host || "").replace(/^https?:/, "");
+    if (!base) return null;
+    const files = host.files || [];
+    const preferred = animated
+        ? files.find(f => /animated/i.test(String(f.format || "")) && /2x|3x/i.test(String(f.name || "")))
+        : null;
+    if (preferred?.name) return `https:${base}/${preferred.name}`;
+    const fallback = files.find(f => /2x|3x/i.test(String(f.name || ""))) || files[files.length - 1];
+    if (fallback?.name) return `https:${base}/${fallback.name}`;
+    return `https:${base}/2x.webp`;
+}
+
+async function loadThirdPartyEmotes(channel) {
+    const clean = String(channel || "").replace(/^#/, "").trim().toLowerCase();
+    if (!clean || !twitchToken?.userId) return;
+    if (thirdPartyEmoteCacheChannel === clean && (Object.keys(thirdPartyEmoteCache.bttv).length || Object.keys(thirdPartyEmoteCache.sevenTv).length)) return;
+
+    const bttv = {};
+    const sevenTv = {};
+    try {
+        const globalBttv = await fetch("https://api.betterttv.net/3/cached/emotes/global");
+        if (globalBttv.ok) {
+            const data = await globalBttv.json();
+            for (const e of data || []) if (e?.code && e?.id) bttv[e.code] = { name:e.code, url:`https://cdn.betterttv.net/emote/${e.id}/3x`, provider:"bttv" };
+        }
+    } catch (e) { console.error("BTTV global emotes:", e); }
+    try {
+        const userBttv = await fetch(`https://api.betterttv.net/3/cached/users/twitch/${encodeURIComponent(twitchToken.userId)}`);
+        if (userBttv.ok) {
+            const data = await userBttv.json();
+            for (const e of [...(data.channelEmotes || []), ...(data.sharedEmotes || [])]) if (e?.code && e?.id) bttv[e.code] = { name:e.code, url:`https://cdn.betterttv.net/emote/${e.id}/3x`, provider:"bttv" };
+        }
+    } catch (e) { console.error("BTTV channel emotes:", e); }
+    try {
+        const global7 = await fetch("https://7tv.io/v3/emote-sets/global");
+        if (global7.ok) {
+            const data = await global7.json();
+            for (const e of data?.emotes || []) { const id=e?.data?.id; const url=id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : pickEmoteUrl(e?.data?.host, true); if(e?.name && url) sevenTv[e.name]={name:e.name,url,provider:"7tv"}; }
+        }
+    } catch (e) { console.error("7TV global emotes:", e); }
+    try {
+        const user7 = await fetch(`https://7tv.io/v3/users/twitch/${encodeURIComponent(twitchToken.userId)}`);
+        if (user7.ok) {
+            const data = await user7.json();
+            const setId = data?.emote_set_id || data?.emote_set?.id;
+            if (setId) {
+                const setResponse = await fetch(`https://7tv.io/v3/emote-sets/${encodeURIComponent(setId)}`);
+                if (setResponse.ok) {
+                    const setData = await setResponse.json();
+                    for (const e of setData?.emotes || []) {
+                        const id = e?.data?.id;
+                        const url = id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : pickEmoteUrl(e?.data?.host, true);
+                        if (e?.name && url) sevenTv[e.name] = { name:e.name, url, provider:"7tv" };
+                    }
+                }
+            }
+        }
+    } catch (e) { console.error("7TV channel emotes:", e); }
+    thirdPartyEmoteCache = { bttv, sevenTv };
+    thirdPartyEmoteCacheChannel = clean;
+    mainWindow?.webContents.send("third-party-emotes-loaded", { bttv:Object.keys(bttv).length, sevenTv:Object.keys(sevenTv).length });
+}
+
+function buildThirdPartyMessageEmotes(text) {
+    const replacements = [];
+    const maps = [];
+    if (overlaySettings.showBttvEmotes !== false) maps.push(thirdPartyEmoteCache.bttv);
+    if (overlaySettings.show7tvEmotes !== false) maps.push(thirdPartyEmoteCache.sevenTv);
+    if (!maps.length || !text) return replacements;
+    const combined = Object.assign({}, ...maps);
+    const regex = /\S+/g;
+    let match;
+    while ((match = regex.exec(text))) {
+        const raw = match[0];
+        const leading = raw.match(/^[^A-Za-z0-9_~:]+/)?.[0] || "";
+        const trailing = raw.match(/[^A-Za-z0-9_~:]+$/)?.[0] || "";
+        const token = raw.slice(leading.length, raw.length - trailing.length || undefined);
+        const emote = combined[token];
+        if (!emote) continue;
+        const start = match.index + leading.length;
+        const end = start + token.length - 1;
+        replacements.push({ start, end, id: token, url: emote.url, name: token, provider: emote.provider });
+    }
+    return replacements;
+}
+
+
+/* =========================
+   TWITCH CHAT
+========================= */
+
+async function connectToTwitchChat(
+    channel
+) {
+
+    channel = String(channel || twitchToken?.username || "").trim();
+
+    if (!channel) {
+        throw new Error("Сначала войдите в Twitch-аккаунт");
+    }
+
+    if (
+        !twitchToken?.accessToken
+    ) {
+
+        throw new Error(
+            "Сначала подключите Twitch"
+        );
+
+    }
+
+
+    channel =
+        channel
+            .replace(
+                /^#/,
+                ""
+            )
+            .trim()
+            .toLowerCase();
+
+
+    if (
+        !channel
+    ) {
+
+        throw new Error(
+            "Некорректное название канала"
+        );
+
+    }
+
+
+    if (twitchClient) {
+
+        try {
+
+            await twitchClient.disconnect();
+
+        } catch (_) {}
+
+        twitchClient =
+            null;
+
+    }
+
+
+    twitchClient =
+        new tmi.Client({
+
+            options: {
+                debug: true
+            },
+
+            identity: {
+
+                username:
+                    twitchToken.username,
+
+                password:
+                    "oauth:" +
+                    twitchToken.accessToken
+
+            },
+
+            channels: [
+                channel
+            ]
+
+        });
+
+
+    twitchClient.on(
+        "connected",
+        () => {
+
+            connectedChannel =
+                channel;
+
+
+            console.log(
+                "Twitch chat connected:",
+                channel
+            );
+
+
+            if (mainWindow) {
+
+                mainWindow.webContents.send(
+                    "twitch-chat-connected",
+                    {
+                        channel
+                    }
+                );
+
+            }
+
+            // Загружаем BTTV/7TV после успешного подключения.
+            loadThirdPartyEmotes(channel).catch((error) => {
+                console.error("Ошибка загрузки сторонних эмотов:", error);
+            });
+
+        }
+    );
+
+
+    twitchClient.on(
+        "message",
+        async (
+            channelName,
+            tags,
+            message,
+            self
+        ) => {
+
+            if (self) {
+                return;
+            }
+
+            const badges = {
+                ...(tags.badges || {})
+            };
+
+            const username =
+                tags["display-name"] ||
+                tags.username ||
+                "Unknown";
+
+            const isBroadcaster =
+                !!(
+                    tags.username &&
+                    channelName &&
+                    tags.username.toLowerCase() ===
+                    channelName.replace(/^#/, "").toLowerCase()
+                );
+
+            if (isBroadcaster) {
+                badges.broadcaster = "1";
+            }
+
+            if (
+                tags.mod === true ||
+                tags.mod === "1"
+            ) {
+                badges.moderator = "1";
+            }
+
+            if (
+                tags.vip === true ||
+                tags.vip === "1"
+            ) {
+                badges.vip = "1";
+            }
+
+            const badgeImages =
+                await loadBadgeImages(
+                    channelName
+                );
+
+            const resolvedBadgeImages = {};
+
+            for (
+                const [name, version]
+                of Object.entries(badges)
+            ) {
+
+                resolvedBadgeImages[name] =
+                    badgeImages[
+                        `${name}:${version}`
+                    ] || null;
+
+            }
+
+            const chatMessage = {
+
+                channel:
+                    channelName,
+
+                username:
+                    username,
+
+                message:
+                    message,
+
+                color:
+                    tags.color ||
+                    null,
+
+                badges:
+                    badges,
+
+                badgeImages:
+                    resolvedBadgeImages,
+
+                badgeInfo:
+                    tags["badge-info"] ||
+                    {},
+
+                emotes:
+                    tags.emotes ||
+                    {},
+
+                thirdPartyEmotes:
+                    buildThirdPartyMessageEmotes(message),
+
+                userId:
+                    tags["user-id"] ||
+                    null,
+
+                moderator:
+                    tags.mod === true ||
+                    tags.mod === "1",
+
+                broadcaster:
+                    isBroadcaster,
+
+                vip:
+                    tags.vip === true ||
+                    tags.vip === "1",
+
+                timestamp:
+                    Date.now()
+
+            };
+
+            console.log(
+                `[${chatMessage.username}] ${chatMessage.message}`,
+                chatMessage.badges
+            );
+
+            if (mainWindow) {
+
+                mainWindow.webContents.send(
+                    "twitch-chat-message",
+                    chatMessage
+                );
+
+            }
+
+            sendMessageToOverlay(
+                chatMessage
+            );
+
+        }
+    );
+
+
+    twitchClient.on(
+        "disconnected",
+        (reason) => {
+
+            console.log(
+                "Twitch chat disconnected:",
+                reason
+            );
+
+
+            connectedChannel =
+                null;
+
+if (
+    mainWindow &&
+    !mainWindow.isDestroyed() &&
+    !mainWindow.webContents.isDestroyed()
+) {
+
+    mainWindow.webContents.send(
+        "twitch-chat-disconnected",
+        reason
+    );
+
+}
+
+        }
+    );
+
+
+    await twitchClient.connect();
+
+}
+
+
+/* =========================
+   DISCONNECT CHAT
+========================= */
+
+async function disconnectFromTwitchChat() {
+
+    if (!twitchClient) {
+        return;
+    }
+
+
+    try {
+
+        await twitchClient.disconnect();
+
+    } catch (_) {}
+
+
+    twitchClient =
+        null;
+
+    connectedChannel =
+        null;
+
+}
+
+
+/* =========================
+   WINDOW IPC
+========================= */
+
+ipcMain.on(
+    "window-minimize",
+    () => {
+
+        if (mainWindow) {
+            mainWindow.minimize();
+        }
+
+    }
+);
+
+
+ipcMain.on(
+    "window-maximize",
+    () => {
+
+        if (!mainWindow) {
+            return;
+        }
+
+
+        if (
+            mainWindow.isMaximized()
+        ) {
+
+            mainWindow.unmaximize();
+
+        } else {
+
+            mainWindow.maximize();
+
+        }
+
+    }
+);
+
+
+ipcMain.on(
+    "window-close",
+    () => {
+
+        if (mainWindow) {
+            mainWindow.close();
+        }
+
+    }
+);
+
+
+/* =========================
+   TWITCH IPC
+========================= */
+
+ipcMain.on(
+    "twitch-login",
+    () => {
+
+        startTwitchLogin();
+
+    }
+);
+
+
+ipcMain.handle(
+    "twitch-session-status",
+    async () => {
+
+        const valid =
+            await validateTwitchToken();
+
+
+        return {
+            connected: valid,
+            username: twitchToken?.username || null,
+            userId: twitchToken?.userId || null
+        };
+
+    }
+);
+
+
+ipcMain.on(
+    "twitch-logout",
+    async () => {
+
+        await disconnectFromTwitchChat();
+
+        deleteTwitchToken();
+
+
+        if (mainWindow) {
+
+            mainWindow.webContents.send(
+                "twitch-logged-out"
+            );
+
+        }
+
+    }
+);
+
+
+ipcMain.handle(
+    "twitch-connect-chat",
+    async (
+        event,
+        channel
+    ) => {
+
+        try {
+
+            await connectToTwitchChat(
+                channel
+            );
+
+
+            return {
+                success: true
+            };
+
+        } catch (error) {
+
+            console.error(error);
+
+
+            return {
+                success: false,
+
+                error:
+                    error.message
+            };
+
+        }
+
+    }
+);
+
+
+ipcMain.handle(
+    "twitch-disconnect-chat",
+    async () => {
+
+        await disconnectFromTwitchChat();
+
+
+        return {
+            success: true
+        };
+
+    }
+);
+
+
+
+/* =========================
+   GENERAL SETTINGS IPC
+========================= */
+
+ipcMain.handle(
+    "general-get-settings",
+    () => generalSettings
+);
+
+ipcMain.on(
+    "general-set-settings",
+    (event, incoming) => {
+
+        if (
+            incoming &&
+            typeof incoming === "object"
+        ) {
+            generalSettings = {
+                ...defaultGeneralSettings,
+                ...generalSettings,
+                ...incoming
+            };
+        }
+
+        normalizeGeneralSettings();
+        saveGeneralSettings();
+        applyAutoStartSetting();
+
+        if (
+            overlayWindow &&
+            !overlayWindow.isDestroyed()
+        ) {
+            overlayWindow.setAlwaysOnTop(
+                generalSettings.alwaysOnTop,
+                "floating"
+            );
+        }
+
+        sendGeneralSettings();
+    }
+);
+
+ipcMain.on(
+    "general-check-updates",
+    () => {
+        checkForUpdates();
+    }
+);
+
+/* =========================
+   OVERLAY IPC
+========================= */
+
+ipcMain.handle(
+    "overlay-get-settings",
+    () => overlaySettings
+);
+
+ipcMain.on(
+    "overlay-set-settings",
+    (event, settings) => {
+
+        const incoming =
+            settings && typeof settings === "object"
+                ? settings
+                : {};
+
+        overlaySettings = {
+            ...defaultOverlaySettings,
+            ...overlaySettings,
+            ...incoming
+        };
+
+        {
+            const n = Number(overlaySettings.fontSize);
+            overlaySettings.fontSize = Number.isFinite(n)
+                ? Math.max(10, Math.min(100, n))
+                : 20;
+        }
+
+        {
+            const opacity =
+                Number(overlaySettings.opacity);
+
+            overlaySettings.opacity =
+                Number.isFinite(opacity)
+                    ? Math.max(
+                        0,
+                        Math.min(100, opacity)
+                    )
+                    : 85;
+        }
+
+        {
+            const n = Number(overlaySettings.maxMessages);
+            overlaySettings.maxMessages = Number.isFinite(n)
+                ? Math.max(1, Math.min(100, n))
+                : 10;
+        }
+
+        {
+            const n = Number(overlaySettings.messageDuration);
+            overlaySettings.messageDuration = Number.isFinite(n)
+                ? Math.max(1, Math.min(600, n))
+                : 30;
+        }
+
+        if (!["left", "center", "right"].includes(overlaySettings.chatHorizontal)) {
+            overlaySettings.chatHorizontal = "left";
+        }
+
+        if (!["top", "center", "bottom"].includes(overlaySettings.chatVertical)) {
+            overlaySettings.chatVertical = "top";
+        }
+
+        overlaySettings.messageBackgroundEnabled = Boolean(overlaySettings.messageBackgroundEnabled);
+        { const n = Number(overlaySettings.messageBackgroundOpacity); overlaySettings.messageBackgroundOpacity = Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 70; }
+        { const n = Number(overlaySettings.messageBorderRadius); overlaySettings.messageBorderRadius = Number.isFinite(n) ? Math.max(0, Math.min(50, n)) : 6; }
+        { const n = Number(overlaySettings.messagePadding); overlaySettings.messagePadding = Number.isFinite(n) ? Math.max(0, Math.min(50, n)) : 2; }
+        { const n = Number(overlaySettings.messageGap); overlaySettings.messageGap = Number.isFinite(n) ? Math.max(0, Math.min(50, n)) : 5; }
+        overlaySettings.textShadowEnabled = Boolean(overlaySettings.textShadowEnabled);
+        {
+            const n = Number(overlaySettings.emoteSize);
+            overlaySettings.emoteSize = Number.isFinite(n)
+                ? Math.max(16, Math.min(100, n))
+                : 30;
+        }
+        {
+            const n = Number(overlaySettings.badgeSize);
+            overlaySettings.badgeSize = Number.isFinite(n)
+                ? Math.max(12, Math.min(60, n))
+                : 20;
+        }
+        { const n = Number(overlaySettings.emoteSpacing); overlaySettings.emoteSpacing = Number.isFinite(n) ? Math.max(0, Math.min(20, n)) : 2; }
+        overlaySettings.showTwitchEmotes = Boolean(overlaySettings.showTwitchEmotes);
+        overlaySettings.showBadges = Boolean(overlaySettings.showBadges);
+        overlaySettings.showBttvEmotes = Boolean(overlaySettings.showBttvEmotes);
+        overlaySettings.show7tvEmotes = Boolean(overlaySettings.show7tvEmotes);
+        overlaySettings.animatedEmotes = Boolean(overlaySettings.animatedEmotes);
+        overlaySettings.showUnicodeEmotes = Boolean(overlaySettings.showUnicodeEmotes);
+
+        overlaySettings.messageEnterEnabled = Boolean(overlaySettings.messageEnterEnabled);
+        overlaySettings.messageExitEnabled = Boolean(overlaySettings.messageExitEnabled);
+
+        if (!["fade", "left", "right", "top", "bottom", "scale", "none"].includes(overlaySettings.messageEnterType)) {
+            overlaySettings.messageEnterType = "fade";
+        }
+
+        if (!["fade", "left", "right", "top", "bottom", "scale", "none"].includes(overlaySettings.messageExitType)) {
+            overlaySettings.messageExitType = "fade";
+        }
+
+        overlaySettings.messageEnterDuration = Math.max(
+            0.1,
+            Math.min(2, Number(overlaySettings.messageEnterDuration) || 0.2)
+        );
+
+        overlaySettings.messageExitDuration = Math.max(
+            0.1,
+            Math.min(2, Number(overlaySettings.messageExitDuration) || 0.25)
+        );
+
+        if (!/^#[0-9a-fA-F]{6}$/.test(String(overlaySettings.usernameColor))) {
+            overlaySettings.usernameColor = "#ffffff";
+        }
+
+        if (!["normal", "bold", "italic", "bold-italic"].includes(overlaySettings.usernameStyle)) {
+            overlaySettings.usernameStyle = "bold";
+        }
+
+        saveOverlaySettings(overlaySettings);
+        if (profiles?.profiles && profiles.activeProfile) {
+            profiles.profiles[profiles.activeProfile] = { ...overlaySettings };
+            saveProfiles();
+        }
+        sendOverlaySettings();
+    }
+);
+
+
+ipcMain.on(
+    "overlay-open",
+    () => {
+
+        createOverlay();
+
+    }
+);
+
+
+ipcMain.on(
+    "overlay-close",
+    () => {
+
+        overlayEditing =
+            false;
+
+        overlayReady =
+            false;
+
+
+        if (
+            overlayWindow &&
+            !overlayWindow.isDestroyed()
+        ) {
+
+            saveOverlayBounds();
+
+            overlayWindow.setIgnoreMouseEvents(
+                true,
+                {
+                    forward: true
+                }
+            );
+
+            overlayWindow.destroy();
+
+        }
+
+
+        overlayWindow =
+            null;
+
+    }
+);
+ipcMain.on(
+    "overlay-edit-toggle",
+    () => {
+
+        if (
+            overlayEditing
+        ) {
+
+            overlayEditing = false;
+
+            if (
+                !overlayWindow ||
+                overlayWindow.isDestroyed()
+            ) {
+                return;
+            }
+
+            overlayWindow.setIgnoreMouseEvents(
+                true,
+                {
+                    forward: true
+                }
+            );
+
+            overlayWindow.setFocusable(
+                false
+            );
+
+            if (overlayReady) {
+
+                overlayWindow.webContents.send(
+                    "overlay-edit-mode",
+                    false
+                );
+
+            }
+
+            return;
+        }
+
+
+        if (
+            !overlayWindow ||
+            overlayWindow.isDestroyed()
+        ) {
+
+            return;
+
+        }
+
+
+        overlayEditing = true;
+
+
+        overlayWindow.setIgnoreMouseEvents(
+            false
+        );
+
+        overlayWindow.setFocusable(
+            true
+        );
+
+        overlayWindow.focus();
+
+
+        if (overlayReady) {
+
+            overlayWindow.webContents.send(
+                "overlay-edit-mode",
+                true
+            );
+
+        }
+
+    }
+);
+ipcMain.on(
+    "overlay-edit",
+    () => {
+
+        if (
+            !overlayWindow ||
+            overlayWindow.isDestroyed()
+        ) {
+
+            return;
+
+        }
+
+
+        overlayEditing =
+            true;
+
+
+        overlayWindow.setIgnoreMouseEvents(
+            false
+        );
+
+        overlayWindow.setFocusable(
+            true
+        );
+
+        overlayWindow.focus();
+
+
+        if (overlayReady) {
+
+            overlayWindow.webContents.send(
+                "overlay-edit-mode",
+                true
+            );
+
+        }
+
+    }
+);
+
+
+ipcMain.on(
+    "overlay-edit-stop",
+    () => {
+
+        overlayEditing =
+            false;
+
+
+        if (
+            !overlayWindow ||
+            overlayWindow.isDestroyed()
+        ) {
+
+            return;
+
+        }
+
+
+        overlayWindow.setIgnoreMouseEvents(
+            true,
+            {
+                forward:
+                    true
+            }
+        );
+
+        overlayWindow.setFocusable(
+            false
+        );
+
+
+        if (overlayReady) {
+
+            overlayWindow.webContents.send(
+                "overlay-edit-mode",
+                false
+            );
+
+        }
+
+    }
+);
+
+
+/* =========================
+   MOVE OVERLAY
+========================= */
+ipcMain.on(
+    "overlay-move",
+    (
+        event,
+        deltaX,
+        deltaY
+    ) => {
+
+        if (
+            !overlayEditing ||
+            !overlayWindow ||
+            overlayWindow.isDestroyed()
+        ) {
+
+            return;
+
+        }
+
+
+        const bounds =
+            overlayWindow.getBounds();
+
+
+        overlayWindow.setPosition(
+            Math.round(
+                bounds.x +
+                Number(deltaX)
+            ),
+            Math.round(
+                bounds.y +
+                Number(deltaY)
+            )
+        );
+saveOverlayBounds();
+    }
+);
+
+
+/* =========================
+   RESIZE OVERLAY
+========================= */
+
+ipcMain.on(
+    "overlay-resize",
+    (
+        event,
+        direction,
+        deltaX,
+        deltaY
+    ) => {
+
+        if (
+            !overlayEditing ||
+            !overlayWindow ||
+            overlayWindow.isDestroyed()
+        ) {
+            return;
+        }
+
+        const bounds =
+            overlayWindow.getBounds();
+
+        const minWidth = 300;
+        const minHeight = 150;
+
+        let x = bounds.x;
+        let y = bounds.y;
+        let width = bounds.width;
+        let height = bounds.height;
+
+        const dx = Number(deltaX) || 0;
+        const dy = Number(deltaY) || 0;
+        const dir = String(direction || "");
+
+        if (dir.includes("e")) {
+            width = Math.max(
+                minWidth,
+                bounds.width + dx
+            );
+        }
+
+        if (dir.includes("s")) {
+            height = Math.max(
+                minHeight,
+                bounds.height + dy
+            );
+        }
+
+        if (dir.includes("w")) {
+            const proposedWidth =
+                bounds.width - dx;
+
+            if (proposedWidth >= minWidth) {
+                x = bounds.x + dx;
+                width = proposedWidth;
+            } else {
+                x = bounds.x +
+                    bounds.width -
+                    minWidth;
+                width = minWidth;
+            }
+        }
+
+        if (dir.includes("n")) {
+            const proposedHeight =
+                bounds.height - dy;
+
+            if (proposedHeight >= minHeight) {
+                y = bounds.y + dy;
+                height = proposedHeight;
+            } else {
+                y = bounds.y +
+                    bounds.height -
+                    minHeight;
+                height = minHeight;
+            }
+        }
+
+        overlayWindow.setBounds({
+            x: Math.round(x),
+            y: Math.round(y),
+            width: Math.round(width),
+            height: Math.round(height)
+        });
+saveOverlayBounds();
+    }
+);
+
+
+
+/* =========================
+   HOTKEYS / PROFILES / APPEARANCE
+========================= */
+
+const hotkeysFile = path.join(app.getPath("userData"), "hotkeys.json");
+const profilesFile = path.join(app.getPath("userData"), "profiles.json");
+const appearanceFile = path.join(app.getPath("userData"), "appearance-settings.json");
+
+const defaultHotkeys = {
+    toggleOverlay: "CommandOrControl+Shift+O",
+    showSettings: "CommandOrControl+Shift+S",
+    editOverlay: "CommandOrControl+Shift+M"
+};
+
+const defaultAppearanceSettings = {
+    primaryColor: "#9147ff",
+    textScale: "medium",
+    theme: "dark",
+    overlayEditBorder: true
+};
+
+let hotkeySettings = loadJsonFile(hotkeysFile, defaultHotkeys);
+let appearanceSettings = loadJsonFile(appearanceFile, defaultAppearanceSettings);
+let profiles = loadJsonFile(profilesFile, {
+    activeProfile: "Основной профиль",
+    profiles: {
+        "Основной профиль": { ...overlaySettings },
+        "Игровой профиль": { ...overlaySettings }
+    }
+});
+
+function loadJsonFile(file, fallback) {
+    try {
+        if (!fs.existsSync(file)) return JSON.parse(JSON.stringify(fallback));
+        const data = JSON.parse(fs.readFileSync(file, "utf8"));
+        return data && typeof data === "object"
+            ? { ...JSON.parse(JSON.stringify(fallback)), ...data }
+            : JSON.parse(JSON.stringify(fallback));
+    } catch (error) {
+        console.error("Ошибка загрузки JSON:", file, error);
+        return JSON.parse(JSON.stringify(fallback));
+    }
+}
+
+function saveJsonFile(file, data) {
+    try {
+        fs.writeFileSync(file, JSON.stringify(data, null, 4), "utf8");
+        return true;
+    } catch (error) {
+        console.error("Ошибка сохранения JSON:", file, error);
+        return false;
+    }
+}
+
+function normalizeAccelerator(value) {
+    return String(value || "").trim();
+}
+
+function registerHotkeys() {
+    globalShortcut.unregisterAll();
+    const requested = { ...defaultHotkeys, ...hotkeySettings };
+    const registered = {};
+
+    for (const [action, accelerator] of Object.entries(requested)) {
+        const key = normalizeAccelerator(accelerator);
+        if (!key) continue;
+        try {
+            const ok = globalShortcut.register(key, () => handleHotkeyAction(action));
+            if (!ok) {
+                console.error("Не удалось зарегистрировать горячую клавишу:", action, key);
+                globalShortcut.unregisterAll();
+                return false;
+            }
+            registered[action] = key;
+        } catch (error) {
+            console.error("Ошибка регистрации горячей клавиши:", action, key, error);
+            globalShortcut.unregisterAll();
+            return false;
+        }
+    }
+
+    hotkeySettings = { ...requested, ...registered };
+    saveJsonFile(hotkeysFile, hotkeySettings);
+    mainWindow?.webContents.send("hotkeys-settings", hotkeySettings);
+    return true;
+}
+
+function handleHotkeyAction(action) {
+    if (action === "toggleOverlay") {
+        if (!overlayWindow || overlayWindow.isDestroyed()) {
+            createOverlay();
+            return;
+        }
+        if (overlayWindow.isVisible()) overlayWindow.hide();
+        else overlayWindow.show();
+        return;
+    }
+
+    if (action === "showSettings") {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.show();
+            mainWindow.focus();
+        }
+        return;
+    }
+
+    if (action === "editOverlay") {
+        if (!overlayWindow || overlayWindow.isDestroyed()) createOverlay();
+        overlayEditing = true;
+        overlayWindow.setIgnoreMouseEvents(false);
+        overlayWindow.setFocusable(true);
+        overlayWindow.focus();
+        if (overlayReady) overlayWindow.webContents.send("overlay-edit-mode", true);
+    }
+}
+
+function normalizeAppearanceSettings() {
+    if (!/^#[0-9a-fA-F]{6}$/.test(String(appearanceSettings.primaryColor))) {
+        appearanceSettings.primaryColor = defaultAppearanceSettings.primaryColor;
+    }
+    if (!['small', 'medium', 'large'].includes(appearanceSettings.textScale)) {
+        appearanceSettings.textScale = 'medium';
+    }
+    if (!['dark', 'light', 'system'].includes(appearanceSettings.theme)) {
+        appearanceSettings.theme = 'dark';
+    }
+    appearanceSettings.overlayEditBorder = Boolean(appearanceSettings.overlayEditBorder);
+    saveJsonFile(appearanceFile, appearanceSettings);
+}
+normalizeAppearanceSettings();
+
+function saveProfiles() { return saveJsonFile(profilesFile, profiles); }
+
+function normalizeProfiles() {
+    if (!profiles.profiles || typeof profiles.profiles !== "object") profiles.profiles = {};
+    if (!profiles.profiles["Основной профиль"]) profiles.profiles["Основной профиль"] = { ...overlaySettings };
+    if (!profiles.profiles["Игровой профиль"]) profiles.profiles["Игровой профиль"] = { ...overlaySettings };
+    if (!profiles.profiles[profiles.activeProfile]) profiles.activeProfile = "Основной профиль";
+    saveProfiles();
+}
+normalizeProfiles();
+
+ipcMain.handle("hotkeys-get-settings", () => hotkeySettings);
+ipcMain.on("hotkeys-set-settings", (event, incoming) => {
+    if (!incoming || typeof incoming !== "object") return;
+    const requested = { ...defaultHotkeys, ...incoming };
+    const unique = new Set();
+    for (const [action, accelerator] of Object.entries(requested)) {
+        const value = normalizeAccelerator(accelerator);
+        if (value && unique.has(value)) {
+            event.sender.send("hotkeys-save-result", { success: false, error: "Одна комбинация назначена нескольким действиям." });
+            return;
+        }
+        if (value) unique.add(value);
+    }
+    const previous = { ...hotkeySettings };
+    hotkeySettings = requested;
+    if (!registerHotkeys()) {
+        hotkeySettings = previous;
+        registerHotkeys();
+        event.sender.send("hotkeys-save-result", { success: false, error: "Эта комбинация занята другой программой или недоступна." });
+        return;
+    }
+    event.sender.send("hotkeys-save-result", { success: true, settings: hotkeySettings });
+});
+
+ipcMain.handle("appearance-get-settings", () => appearanceSettings);
+ipcMain.on("appearance-set-settings", (event, incoming) => {
+    if (incoming && typeof incoming === "object") appearanceSettings = { ...appearanceSettings, ...incoming };
+    normalizeAppearanceSettings();
+    mainWindow?.webContents.send("appearance-settings", appearanceSettings);
+    overlayWindow?.webContents.send("appearance-settings", appearanceSettings);
+});
+
+ipcMain.handle("profiles-get", () => profiles);
+ipcMain.on("profiles-create", (event, name) => {
+    const clean = String(name || "").trim();
+    if (!clean || clean.length > 40 || profiles.profiles[clean]) {
+        return event.sender.send("profiles-result", {
+            success: false,
+            error: "Некорректное или уже существующее имя профиля."
+        });
+    }
+
+    profiles.profiles[clean] = { ...overlaySettings };
+    profiles.activeProfile = clean;
+
+    const saved = saveProfiles();
+
+    event.sender.send("profiles-result", {
+        success: saved,
+        error: saved ? undefined : "Не удалось сохранить новый профиль.",
+        profiles
+    });
+});
+
+ipcMain.on("profiles-select", (event, name) => {
+    const clean = String(name || "").trim();
+
+    if (!profiles.profiles[clean]) {
+        return event.sender.send("profiles-result", {
+            success: false,
+            error: "Профиль не найден."
+        });
+    }
+
+    overlaySettings = {
+        ...defaultOverlaySettings,
+        ...profiles.profiles[clean]
+    };
+
+    profiles.activeProfile = clean;
+
+    saveOverlaySettings(overlaySettings);
+    const saved = saveProfiles();
+
+    sendOverlaySettings();
+
+    event.sender.send("profiles-result", {
+        success: saved,
+        error: saved ? undefined : "Не удалось сохранить выбранный профиль.",
+        profiles
+    });
+});
+ipcMain.on("profiles-update-current", (event) => {
+    const active = profiles.activeProfile || "Основной профиль";
+    if (!profiles.profiles[active]) {
+        profiles.profiles[active] = { ...overlaySettings };
+    } else {
+        profiles.profiles[active] = { ...overlaySettings };
+    }
+    const saved = saveProfiles();
+    event.sender.send("profiles-result", {
+        success: saved,
+        error: saved ? undefined : "Не удалось сохранить профиль.",
+        profiles
+    });
+});
+ipcMain.on("profiles-rename", (event, oldName, newName) => {
+    oldName = String(oldName || "").trim(); newName = String(newName || "").trim();
+    if (!profiles.profiles[oldName] || !newName || profiles.profiles[newName]) return event.sender.send("profiles-result", { success:false, error:"Нельзя переименовать профиль в это имя." });
+    profiles.profiles[newName] = profiles.profiles[oldName];
+    delete profiles.profiles[oldName];
+    if (profiles.activeProfile === oldName) profiles.activeProfile = newName;
+    const saved = saveProfiles();
+    event.sender.send("profiles-result", { success: saved, error: saved ? undefined : "Не удалось сохранить профиль.", profiles });
+});
+ipcMain.on("profiles-delete", (event, name) => {
+    name = String(name || "").trim();
+    if (name === "Основной профиль") return event.sender.send("profiles-result", { success:false, error:"Основной профиль удалить нельзя." });
+    if (!profiles.profiles[name]) return event.sender.send("profiles-result", { success:false, error:"Профиль не найден." });
+    delete profiles.profiles[name];
+    if (profiles.activeProfile === name) {
+        profiles.activeProfile = "Основной профиль";
+        overlaySettings = { ...defaultOverlaySettings, ...profiles.profiles[profiles.activeProfile] };
+        saveOverlaySettings(overlaySettings);
+        sendOverlaySettings();
+    }
+    const saved = saveProfiles();
+    event.sender.send("profiles-result", {
+        success: saved,
+        error: saved ? undefined : "Не удалось сохранить изменения профиля.",
+        profiles
+    });
+});
+
+
+/* =========================
+   APP START
+========================= */
+
+app.whenReady().then(
+    async () => {
+
+        loadTwitchToken();
+
+        applyAutoStartSetting();
+
+        createWindow();
+        registerHotkeys();
+
+        setTimeout(
+            () => {
+                checkForUpdates();
+            },
+            1500
+        );
+
+
+        const valid =
+            await validateTwitchToken();
+
+
+        if (
+            valid &&
+            mainWindow
+        ) {
+
+            mainWindow.webContents.send(
+                "twitch-session-restored"
+            );
+
+        }
+
+
+        app.on(
+            "activate",
+            () => {
+
+                if (
+                    BrowserWindow
+                        .getAllWindows()
+                        .length === 0
+                ) {
+
+                    createWindow();
+
+                }
+
+            }
+        );
+
+    }
+);
+
+
+/* =========================
+   MAIN WINDOW
+========================= */
+
+function createWindow() {
+
+    mainWindow =
+        new BrowserWindow({
+
+            width: 1280,
+
+            height: 720,
+
+            minWidth: 900,
+
+            minHeight: 600,
+
+            frame: false,
+
+            backgroundColor:
+                "#0e1016",
+
+            resizable: true,
+
+            maximizable: true,
+
+            minimizable: true,
+
+            webPreferences: {
+
+                preload:
+                    path.join(
+                        __dirname,
+                        "preload.js"
+                    ),
+
+                contextIsolation:
+                    true,
+
+                nodeIntegration:
+                    false,
+
+                sandbox:
+                    false
+
+            }
+
+        });
+
+
+    mainWindow.loadFile(
+        path.join(
+            __dirname,
+            "public",
+            "index.html"
+        )
+    );
+
+
+    mainWindow.on(
+        "closed",
+        async () => {
+
+            await disconnectFromTwitchChat();
+
+
+            if (
+                overlayWindow &&
+                !overlayWindow.isDestroyed()
+            ) {
+
+                overlayWindow.close();
+
+            }
+
+
+            overlayReady = false;
+            overlayEditing = false;
+            pendingOverlayMessages = [];
+
+            overlayWindow =
+                null;
+
+            mainWindow =
+                null;
+
+        }
+    );
+
+}
+
+
+/* =========================
+   CLOSE ALL WINDOWS
+========================= */
+
+app.on("will-quit", () => {
+    globalShortcut.unregisterAll();
+});
+
+app.on(
+    "window-all-closed",
+    () => {
+
+        if (
+            process.platform !==
+            "darwin"
+        ) {
+
+            app.quit();
+
+        }
+
+    }
+);

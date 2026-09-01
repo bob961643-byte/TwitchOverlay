@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Twitch Overlay</title>
+
+    <style>
+
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+
+            width: 100%;
+            height: 100%;
+
+            background: transparent;
+
+            overflow: hidden;
+
+            font-family:
+                Arial,
+                Helvetica,
+                sans-serif;
+
+            pointer-events: none;
+        }
+
+        #chat {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: flex-start;
+            gap: var(--message-gap, 5px);
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        /* В режиме редактирования чат принимает мышь. */
+/* =========================
+           СООБЩЕНИЕ
+        ========================= */
+
+        .message {
+
+            width: fit-content;
+
+            max-width: 100%;
+
+            padding: var(--message-padding, 2px);
+
+            color: #ffffff;
+
+            font-size: var(--chat-font-size, 20px);
+
+            background: var(--message-background, transparent);
+
+            border-radius: var(--message-radius, 6px);
+
+            line-height: 1.45;
+
+            word-break: break-word;
+
+            overflow-wrap: anywhere;
+
+            text-shadow: var(--message-shadow);
+
+            animation:
+                var(--message-enter-animation, messageFadeIn)
+                var(--message-enter-duration, 0.2s)
+                ease-out both;
+        }
+
+
+        /* =========================
+           BADGES
+        ========================= */
+
+        .badges {
+
+            display: inline-flex;
+
+            align-items: center;
+
+            vertical-align: middle;
+
+            margin-right: 6px;
+
+            gap: 3px;
+
+            height: 22px;
+        }
+
+
+        .badge {
+
+            display: inline-block;
+
+            width: var(--badge-size, 20px);
+            height: var(--badge-size, 20px);
+
+            min-width: var(--badge-size, 20px);
+
+            object-fit: contain;
+
+            vertical-align: middle;
+        }
+
+
+        /* =========================
+           ИМЯ
+        ========================= */
+
+        .username {
+
+            display: inline;
+
+            font-weight: var(--username-weight, 700);
+
+            margin-right: 5px;
+
+            white-space: nowrap;
+
+            color: var(--username-color, #ffffff);
+
+            font-style: var(--username-style, normal);
+        }
+
+
+        /* =========================
+           TWITCH EMOTE
+        ========================= */
+
+        .emote {
+
+            display: inline-block;
+
+            width: auto;
+
+            height: var(--emote-size, 30px);
+
+            max-width: var(--emote-size, 100px);
+
+            object-fit: contain;
+
+            vertical-align: middle;
+
+            margin:
+                -5px var(--emote-spacing, 2px)
+                -6px var(--emote-spacing, 2px);
+        }
+
+
+        .message-time {
+            display: inline;
+            margin-left: 7px;
+            opacity: 0.65;
+            font-size: 0.75em;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+
+        .message-content {
+
+            display: inline;
+        }
+
+
+        @keyframes messageFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes messageFromLeft {
+            from { opacity: 0; transform: translateX(-35px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes messageFromRight {
+            from { opacity: 0; transform: translateX(35px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes messageFromTop {
+            from { opacity: 0; transform: translateY(-35px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes messageFromBottom {
+            from { opacity: 0; transform: translateY(35px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes messageScaleIn {
+            from { opacity: 0; transform: scale(0.75); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes messageFadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        @keyframes messageToLeft {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(-35px); }
+        }
+
+        @keyframes messageToRight {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(35px); }
+        }
+
+        @keyframes messageToTop {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(-35px); }
+        }
+
+        @keyframes messageToBottom {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(35px); }
+        }
+
+        @keyframes messageScaleOut {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0; transform: scale(0.75); }
+        }
+
+        .message.removing {
+
+            opacity: 0;
+
+            transform:
+                translateY(-5px);
+
+            transition:
+                opacity 0.25s ease,
+                transform 0.25s ease;
+        }
+
+    
+       body.overlay-editing {
+    pointer-events: auto;
+
+    cursor: move;
+
+    box-shadow:
+        inset 0 0 0 2px var(--edit-accent, rgba(255,255,255,.55));
+}
+
+        body.overlay-editing #chat {
+            pointer-events: none;
+        }
+
+        /* =========================
+   RESIZE HANDLES
+========================= */
+
+.resize-handle {
+    position: fixed;
+
+    display: none;
+
+    width: 12px;
+    height: 12px;
+
+    z-index: 999999;
+
+    pointer-events: auto;
+
+    box-sizing: border-box;
+
+    background: var(--edit-accent, #ffffff);
+
+    border: 2px solid #151820;
+
+    border-radius: 3px;
+}
+
+
+/* Показываем только при редактировании */
+
+body.overlay-editing .resize-handle {
+    display: block;
+}
+
+
+/* =========================
+   СТОРОНЫ
+========================= */
+
+.resize-n {
+    top: 0;
+    left: 50%;
+
+    transform: translateX(-50%);
+
+    cursor: ns-resize;
+}
+
+
+.resize-s {
+    bottom: 0;
+    left: 50%;
+
+    transform: translateX(-50%);
+
+    cursor: ns-resize;
+}
+
+
+.resize-e {
+    right: 0;
+    top: 50%;
+
+    transform: translateY(-50%);
+
+    cursor: ew-resize;
+}
+
+
+.resize-w {
+    left: 0;
+    top: 50%;
+
+    transform: translateY(-50%);
+
+    cursor: ew-resize;
+}
+
+
+/* =========================
+   УГЛЫ
+========================= */
+
+.resize-ne {
+    top: 0;
+    right: 0;
+
+    cursor: nesw-resize;
+}
+
+
+.resize-nw {
+    top: 0;
+    left: 0;
+
+    cursor: nwse-resize;
+}
+
+
+.resize-se {
+    right: 0;
+    bottom: 0;
+
+    cursor: nwse-resize;
+}
+
+
+.resize-sw {
+    left: 0;
+    bottom: 0;
+
+    cursor: nesw-resize;
+}
+
+
+
+        /* =========================
+           РЕЖИМ РЕДАКТИРОВАНИЯ
+        ========================= */
+
+        body.overlay-editing {
+            pointer-events: auto;
+            cursor: move;
+            box-shadow: inset 0 0 0 2px rgba(255,255,255,0.55);
+        }
+
+        body.overlay-editing #chat { pointer-events: none; }
+
+        .resize-handle {
+            position: fixed;
+            display: none;
+            width: 12px;
+            height: 12px;
+            z-index: 999999;
+            pointer-events: auto;
+            box-sizing: border-box;
+            background: #ffffff;
+            border: 2px solid #151820;
+            border-radius: 3px;
+        }
+
+        body.overlay-editing .resize-handle { display: block; }
+
+        .resize-n { top: 0; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+        .resize-s { bottom: 0; left: 50%; transform: translateX(-50%); cursor: ns-resize; }
+        .resize-e { right: 0; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+        .resize-w { left: 0; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+        .resize-ne { top: 0; right: 0; cursor: nesw-resize; }
+        .resize-nw { top: 0; left: 0; cursor: nwse-resize; }
+        .resize-se { right: 0; bottom: 0; cursor: nwse-resize; }
+        .resize-sw { left: 0; bottom: 0; cursor: nesw-resize; }
+
+    </style>
+
+</head>
+
+
+<body>
+
+    <div id="chat"></div>
+
+
+    <div class="resize-handle resize-n" data-resize="n"></div>
+    <div class="resize-handle resize-s" data-resize="s"></div>
+    <div class="resize-handle resize-e" data-resize="e"></div>
+    <div class="resize-handle resize-w" data-resize="w"></div>
+    <div class="resize-handle resize-ne" data-resize="ne"></div>
+    <div class="resize-handle resize-nw" data-resize="nw"></div>
+    <div class="resize-handle resize-se" data-resize="se"></div>
+    <div class="resize-handle resize-sw" data-resize="sw"></div>
+    <script>
+
+const chat =
+    document.getElementById("chat");
+
+let resizeDirection =
+    "";
+
+let overlayEditing =
+    false;
+
+let isDragging =
+    false;
+
+let isResizing =
+    false;
+
+let dragStartX =
+    0;
+
+let dragStartY =
+    0;
+
+let generalSettings = {
+    showMessageTime: true,
+    hideEmptyMessages: false
+};
+
+let overlaySettings = {
+    fontSize: 20,
+    opacity: 85,
+    maxMessages: 10,
+    messageDuration: 30,
+    usernameColor: "#ffffff",
+    usernameStyle: "bold",
+    chatHorizontal: "left",
+    chatVertical: "top",
+    messageBackgroundEnabled: false, messageBackgroundOpacity: 70, messageBorderRadius: 6, messagePadding: 2, messageGap: 5,
+    textShadowEnabled: true, emoteSize: 30, badgeSize: 20, emoteSpacing: 2, showTwitchEmotes: true, showBadges: true, showBttvEmotes: true, show7tvEmotes: true, animatedEmotes: true, showUnicodeEmotes: true
+};
+
+
+
+function applyGeneralSettings(settings) {
+
+    if (
+        !settings ||
+        typeof settings !== "object"
+    ) {
+        return;
+    }
+
+    generalSettings = {
+        ...generalSettings,
+        ...settings
+    };
+}
+
+function applyOverlaySettings(settings) {
+
+    if (!settings || typeof settings !== "object") {
+        return;
+    }
+
+    overlaySettings = {
+        ...overlaySettings,
+        ...settings
+    };
+
+    const fontSize =
+        Math.max(
+            10,
+            Math.min(
+                100,
+                Number(overlaySettings.fontSize) || 20
+            )
+        );
+
+    document.documentElement.style.setProperty(
+        "--chat-font-size",
+        `${fontSize}px`
+    );
+
+    const horizontal =
+        ["left", "center", "right"].includes(
+            overlaySettings.chatHorizontal
+        )
+            ? overlaySettings.chatHorizontal
+            : "left";
+
+    const vertical =
+        ["top", "center", "bottom"].includes(
+            overlaySettings.chatVertical
+        )
+            ? overlaySettings.chatVertical
+            : "top";
+
+    chat.style.justifyContent =
+        vertical === "top"
+            ? "flex-start"
+            : vertical === "center"
+                ? "center"
+                : "flex-end";
+
+    chat.style.alignItems =
+        horizontal === "left"
+            ? "flex-start"
+            : horizontal === "center"
+                ? "center"
+                : "flex-end";
+
+    const color =
+        /^#[0-9a-fA-F]{6}$/.test(
+            String(overlaySettings.usernameColor)
+        )
+            ? String(overlaySettings.usernameColor)
+            : "#ffffff";
+
+    document.documentElement.style.setProperty(
+        "--username-color",
+        color
+    );
+
+    const style =
+        String(overlaySettings.usernameStyle);
+
+    document.documentElement.style.setProperty(
+        "--username-weight",
+        style.includes("bold")
+            ? "700"
+            : "400"
+    );
+
+    document.documentElement.style.setProperty(
+        "--username-style",
+        style.includes("italic")
+            ? "italic"
+            : "normal"
+    );
+
+    const bgN = Number(overlaySettings.messageBackgroundOpacity); const bgOpacity = Number.isFinite(bgN) ? Math.max(0, Math.min(100, bgN)) : 70;
+    document.documentElement.style.setProperty("--message-background", overlaySettings.messageBackgroundEnabled === true ? `rgba(0,0,0,${bgOpacity / 100})` : "transparent");
+    document.documentElement.style.setProperty("--message-radius", `${(Number.isFinite(Number(overlaySettings.messageBorderRadius)) ? Math.max(0, Math.min(50, Number(overlaySettings.messageBorderRadius))) : 6)}px`);
+    document.documentElement.style.setProperty("--message-padding", `${(Number.isFinite(Number(overlaySettings.messagePadding)) ? Math.max(0, Math.min(50, Number(overlaySettings.messagePadding))) : 2)}px`);
+    document.documentElement.style.setProperty("--message-gap", `${(Number.isFinite(Number(overlaySettings.messageGap)) ? Math.max(0, Math.min(50, Number(overlaySettings.messageGap))) : 5)}px`);
+    document.documentElement.style.setProperty("--message-shadow", overlaySettings.textShadowEnabled === false ? "none" : "0 1px 3px rgba(0,0,0,.95),1px 0 2px rgba(0,0,0,.9),-1px 0 2px rgba(0,0,0,.9),0 -1px 2px rgba(0,0,0,.9)");
+    document.documentElement.style.setProperty("--emote-size", `${Math.max(16, Math.min(100, Number(overlaySettings.emoteSize) || 30))}px`);
+    document.documentElement.style.setProperty("--badge-size", `${Math.max(12, Math.min(60, Number(overlaySettings.badgeSize) || 20))}px`);
+    document.documentElement.style.setProperty("--emote-spacing", `${(Number.isFinite(Number(overlaySettings.emoteSpacing)) ? Math.max(0, Math.min(20, Number(overlaySettings.emoteSpacing))) : 2)}px`);
+
+}
+
+
+
+if (
+    window.overlayAPI &&
+    typeof window.overlayAPI.onGeneralSettings ===
+    "function"
+) {
+
+    window.overlayAPI.onGeneralSettings(
+        applyGeneralSettings
+    );
+
+}
+
+if (
+    window.overlayAPI &&
+    typeof window.overlayAPI.onSettings ===
+    "function"
+) {
+
+    window.overlayAPI.onSettings(
+        applyOverlaySettings
+    );
+
+}
+
+if (window.overlayAPI && typeof window.overlayAPI.onAppearanceSettings === "function") {
+    window.overlayAPI.onAppearanceSettings((settings) => {
+        if (!settings || typeof settings !== "object") return;
+        document.documentElement.style.setProperty("--edit-accent", settings.primaryColor || "#9147ff");
+        document.body.classList.toggle("hide-edit-border", settings.overlayEditBorder === false);
+    });
+}
+
+
+if (
+    window.overlayAPI &&
+    typeof window.overlayAPI.onMessage ===
+    "function"
+) {
+
+    window.overlayAPI.onMessage(
+        (message) => {
+
+            addMessage(message);
+
+        }
+    );
+
+}
+
+
+if (
+    window.overlayAPI &&
+    typeof window.overlayAPI.onEditMode ===
+    "function"
+) {
+/* =========================
+   РАЗМЕР ТЕКСТА ЧАТА
+========================= */
+
+if (
+    window.overlayAPI &&
+    typeof window.overlayAPI.onChatFontSize ===
+    "function"
+) {
+
+    window.overlayAPI.onChatFontSize(
+        (size) => {
+
+            const fontSize =
+                Math.max(
+                    10,
+                    Math.min(
+                        100,
+                        Number(size) || 20
+                    )
+                );
+
+            document.documentElement.style.setProperty(
+                "--chat-font-size",
+                `${fontSize}px`
+            );
+
+        }
+    );
+
+}
+    window.overlayAPI.onEditMode(
+        (enabled) => {
+
+            overlayEditing =
+                Boolean(enabled);
+
+
+            if (overlayEditing) {
+
+                document.body.classList.add(
+                    "overlay-editing"
+                );
+
+            } else {
+
+                document.body.classList.remove(
+                    "overlay-editing"
+                );
+
+                isDragging =
+                    false;
+
+                isResizing =
+                    false;
+
+            }
+
+        }
+    );
+
+}
+
+
+/* =========================
+   ПЕРЕМЕЩЕНИЕ И РАЗМЕР OVERLAY
+========================= */
+
+document.addEventListener(
+    "mousedown",
+    (event) => {
+
+        if (
+            !overlayEditing ||
+            event.button !== 0
+        ) {
+            return;
+        }
+
+        const handle =
+            event.target.closest(
+                ".resize-handle"
+            );
+
+        if (handle) {
+            isResizing = true;
+            isDragging = false;
+            resizeDirection =
+                handle.dataset.resize || "";
+        } else {
+            isDragging = true;
+            isResizing = false;
+            resizeDirection = "";
+        }
+
+        dragStartX = event.screenX;
+        dragStartY = event.screenY;
+
+        event.preventDefault();
+    }
+);
+
+document.addEventListener(
+    "mousemove",
+    (event) => {
+
+        if (!overlayEditing) {
+            return;
+        }
+
+        const deltaX =
+            event.screenX - dragStartX;
+        const deltaY =
+            event.screenY - dragStartY;
+
+        if (deltaX === 0 && deltaY === 0) {
+            return;
+        }
+
+        if (isResizing) {
+            window.overlayAPI?.resize?.(
+                resizeDirection,
+                deltaX,
+                deltaY
+            );
+        } else if (isDragging) {
+            window.overlayAPI?.move?.(
+                deltaX,
+                deltaY
+            );
+        }
+
+        dragStartX = event.screenX;
+        dragStartY = event.screenY;
+    }
+);
+
+function stopPointerAction() {
+    isDragging = false;
+    isResizing = false;
+    resizeDirection = "";
+}
+
+document.addEventListener(
+    "mouseup",
+    stopPointerAction
+);
+
+document.addEventListener(
+    "mouseleave",
+    stopPointerAction
+);
+
+document.addEventListener(
+    "keydown",
+    (event) => {
+        if (
+            event.key === "Escape" &&
+            overlayEditing
+        ) {
+            window.overlayAPI?.stopEditMode?.();
+        }
+    }
+);
+
+
+function createBadge(
+    name,
+    version,
+    imageUrl
+) {
+
+    const badge =
+        document.createElement("img");
+
+    badge.className =
+        "badge";
+
+    badge.alt =
+        name;
+
+    badge.title =
+        name;
+
+    badge.src =
+        imageUrl ||
+        `https://static-cdn.jtvnw.net/badges/v1/${encodeURIComponent(name)}/${encodeURIComponent(version)}/2`;
+
+    badge.onerror = () => {
+
+        if (
+            badge.dataset.fallback !== "1"
+        ) {
+
+            badge.dataset.fallback =
+                "1";
+
+            badge.src =
+                `https://static-cdn.jtvnw.net/badges/v1/${encodeURIComponent(name)}/${encodeURIComponent(version)}/1`;
+
+        } else {
+
+            badge.remove();
+
+        }
+
+    };
+
+    return badge;
+
+}
+
+
+function addMessage(message) {
+
+    if (!message || !chat) {
+        return;
+    }
+
+    const messageText =
+        String(
+            message.message || ""
+        );
+
+    if (
+        generalSettings.hideEmptyMessages &&
+        messageText.trim() === ""
+    ) {
+        return;
+    }
+
+    const messageElement =
+        document.createElement("div");
+
+    messageElement.className =
+        "message";
+
+    applyMessageEnterAnimation(
+        messageElement
+    );
+
+    if (
+        overlaySettings.showBadges !== false &&
+        message.badges &&
+        Object.keys(message.badges).length
+    ) {
+
+        const badges =
+            document.createElement("span");
+
+        badges.className =
+            "badges";
+
+        for (
+            const [
+                badgeName,
+                badgeVersion
+            ]
+            of Object.entries(
+                message.badges
+            )
+        ) {
+
+            const badge =
+                createBadge(
+                    badgeName,
+                    badgeVersion,
+                    message.badgeImages
+                        ?.[badgeName]
+                );
+
+            badges.appendChild(
+                badge
+            );
+
+        }
+
+        if (badges.children.length) {
+
+            messageElement.appendChild(
+                badges
+            );
+
+        }
+
+    }
+
+    const username =
+        document.createElement("span");
+
+    username.className =
+        "username";
+
+    username.textContent =
+        message.username ||
+        "Unknown";
+
+    username.style.color =
+        overlaySettings.usernameColor ||
+        message.color ||
+        "#ffffff";
+
+    messageElement.appendChild(
+        username
+    );
+
+    messageElement.appendChild(
+        document.createTextNode(": ")
+    );
+
+    const content =
+        document.createElement("span");
+
+    content.className =
+        "message-content";
+
+    renderMessageContent(
+        content,
+        message
+    );
+
+    messageElement.appendChild(
+        content
+    );
+
+    if (
+        generalSettings.showMessageTime !== false
+    ) {
+
+        const time =
+            document.createElement("span");
+
+        time.className =
+            "message-time";
+
+        const timestamp =
+            Number(message.timestamp) || Date.now();
+
+        time.textContent =
+            new Date(timestamp).toLocaleTimeString(
+                [],
+                {
+                    hour: "2-digit",
+                    minute: "2-digit"
+                }
+            );
+
+        messageElement.appendChild(
+            time
+        );
+
+    }
+
+    chat.appendChild(
+        messageElement
+    );
+
+    while (
+        chat.children.length >
+        Math.max(
+            1,
+            Number(overlaySettings.maxMessages) || 10
+        )
+    ) {
+
+        chat.firstChild.remove();
+
+    }
+
+    const timer =
+        setTimeout(
+            () => {
+                removeMessage(
+                    messageElement
+                );
+            },
+            Math.max(
+                1,
+                Number(overlaySettings.messageDuration) || 30
+            ) * 1000
+        );
+
+    messageElement._timer =
+        timer;
+
+}
+
+
+
+function freezeEmoteAnimation(img) {
+    if (overlaySettings.animatedEmotes !== false) return;
+    img.crossOrigin = "anonymous";
+    img.addEventListener("load", () => {
+        if (img.dataset.frozen === "1" || overlaySettings.animatedEmotes !== false) return;
+        try {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth || img.width || 1;
+            canvas.height = img.naturalHeight || img.height || 1;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+            img.dataset.frozen = "1";
+            img.src = canvas.toDataURL("image/png");
+        } catch (_) {
+            // Если CDN не разрешает canvas из-за CORS, оставляем оригинал.
+        }
+    }, { once: true });
+}
+
+function renderMessageContent(
+    container,
+    message
+) {
+
+    const originalText = String(message.message || "");
+    const text = overlaySettings.showUnicodeEmotes === false
+        ? originalText.replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "")
+        : originalText;
+
+    const replacements = [];
+    const emotes = message.emotes || {};
+
+    if (overlaySettings.showTwitchEmotes !== false) {
+        for (const [emoteId, positions] of Object.entries(emotes)) {
+            for (const position of positions || []) {
+                const parts = String(position).split("-");
+                if (parts.length !== 2) continue;
+                replacements.push({ start:Number(parts[0]), end:Number(parts[1]), id:emoteId, provider:"twitch" });
+            }
+        }
+    }
+
+    if (overlaySettings.showBttvEmotes !== false || overlaySettings.show7tvEmotes !== false) {
+        for (const replacement of (message.thirdPartyEmotes || [])) {
+            if (replacement.provider === "bttv" && overlaySettings.showBttvEmotes === false) continue;
+            if (replacement.provider === "7tv" && overlaySettings.show7tvEmotes === false) continue;
+            replacements.push(replacement);
+        }
+    }
+
+    replacements.sort((a,b) => a.start - b.start || a.end - b.end);
+    const accepted = [];
+    let lastEnd = -1;
+    for (const replacement of replacements) {
+        if (replacement.start <= lastEnd) continue;
+        accepted.push(replacement);
+        lastEnd = replacement.end;
+    }
+
+    let cursor = 0;
+    for (const replacement of accepted) {
+        if (replacement.start < cursor || replacement.start >= text.length) continue;
+        if (replacement.start > cursor) container.appendChild(document.createTextNode(text.substring(cursor, replacement.start)));
+
+        if (replacement.provider === "twitch" && overlaySettings.showTwitchEmotes === false) {
+            container.appendChild(document.createTextNode(originalText.substring(replacement.start, replacement.end + 1)));
+            cursor = replacement.end + 1;
+            continue;
+        }
+
+        const emote = document.createElement("img");
+        emote.className = "emote";
+        emote.alt = text.substring(replacement.start, replacement.end + 1);
+        emote.title = `${emote.alt}${replacement.provider ? ` · ${replacement.provider.toUpperCase()}` : ""}`;
+        if (replacement.url) {
+            emote.src = replacement.url;
+            freezeEmoteAnimation(emote);
+        } else {
+            emote.src = `https://static-cdn.jtvnw.net/emoticons/v2/${encodeURIComponent(replacement.id)}/default/dark/3.0`;
+            freezeEmoteAnimation(emote);
+            emote.onerror = () => {
+                emote.src = `https://static-cdn.jtvnw.net/emoticons/v2/${encodeURIComponent(replacement.id)}/default/dark/2.0`;
+                emote.onerror = () => emote.replaceWith(document.createTextNode(emote.alt));
+            };
+        }
+        container.appendChild(emote);
+        cursor = replacement.end + 1;
+    }
+
+    if (cursor < text.length) container.appendChild(document.createTextNode(text.substring(cursor)));
+}
+
+
+function removeMessage(
+    element
+) {
+
+    if (
+        !element ||
+        !element.parentNode
+    ) {
+        return;
+    }
+
+    if (
+        element._timer
+    ) {
+        clearTimeout(
+            element._timer
+        );
+        element._timer = null;
+    }
+
+    if (
+        overlaySettings.messageExitEnabled === false ||
+        overlaySettings.messageExitType === "none"
+    ) {
+
+        element.remove();
+
+        return;
+
+    }
+
+    const type =
+        String(
+            overlaySettings.messageExitType || "fade"
+        );
+
+    const animationMap = {
+        fade: "messageFadeOut",
+        left: "messageToLeft",
+        right: "messageToRight",
+        top: "messageToTop",
+        bottom: "messageToBottom",
+        scale: "messageScaleOut"
+    };
+
+    const animationName =
+        animationMap[type] ||
+        animationMap.fade;
+
+    const duration =
+        Math.max(
+            0.1,
+            Math.min(
+                2,
+                Number(
+                    overlaySettings.messageExitDuration
+                ) || 0.25
+            )
+        );
+
+    element.classList.add(
+        "removing"
+    );
+
+    element.style.animation =
+        `${animationName} ${duration}s ease-in both`;
+
+    const removeTimer =
+        setTimeout(
+            () => {
+
+                if (
+                    element.parentNode
+                ) {
+                    element.remove();
+                }
+
+            },
+            duration * 1000
+        );
+
+    element._removeTimer =
+        removeTimer;
+
+}
+
+
+function applyMessageEnterAnimation(
+    element
+) {
+
+    if (
+        !element
+    ) {
+        return;
+    }
+
+    if (
+        overlaySettings.messageEnterEnabled === false ||
+        overlaySettings.messageEnterType === "none"
+    ) {
+
+        element.style.animation =
+            "none";
+
+        return;
+
+    }
+
+    const animationMap = {
+        fade: "messageFadeIn",
+        left: "messageFromLeft",
+        right: "messageFromRight",
+        top: "messageFromTop",
+        bottom: "messageFromBottom",
+        scale: "messageScaleIn"
+    };
+
+    const type =
+        String(
+            overlaySettings.messageEnterType || "fade"
+        );
+
+    const animationName =
+        animationMap[type] ||
+        animationMap.fade;
+
+    const duration =
+        Math.max(
+            0.1,
+            Math.min(
+                2,
+                Number(
+                    overlaySettings.messageEnterDuration
+                ) || 0.2
+            )
+        );
+
+    element.style.animation =
+        `${animationName} ${duration}s ease-out both`;
+
+}
+
+    </script>
+
+</body>
+
+</html>
