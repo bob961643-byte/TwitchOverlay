@@ -9,6 +9,7 @@ const {
     shell,
     dialog
 } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
 const tmi = require("tmi.js");
@@ -512,7 +513,7 @@ const overlaySettingsFile =
 
 const defaultOverlaySettings = {
     fontSize: 20, opacity: 85, maxMessages: 10, messageDuration: 30,
-    usernameColor: "#ffffff", usernameStyle: "bold",
+    usernameColor: "#ffffff", usernameColorMode: "twitch", usernameStyle: "bold",
     chatHorizontal: "left", chatVertical: "top",
     messageBackgroundEnabled: false, messageBackgroundOpacity: 70,
     messageBorderRadius: 6, messagePadding: 2, messageGap: 5,
@@ -687,58 +688,37 @@ function sendGeneralSettings() {
 }
 
 async function checkForUpdates() {
+    if (!app.isPackaged) {
+        console.log("AutoUpdater: development mode, skipped");
+        return;
+    }
+
     if (!generalSettings.checkUpdates) {
+        console.log("AutoUpdater: проверка отключена в настройках");
         return;
     }
 
     try {
-        const response = await fetch(
-            "https://registry.npmjs.org/twitchoverlay/latest"
-        );
-
-        if (!response.ok) {
-            throw new Error(
-                `HTTP ${response.status}`
-            );
-        }
-
-        const data = await response.json();
-        const currentVersion =
-            app.getVersion();
+        await autoUpdater.checkForUpdates();
+    } catch (error) {
+        console.error("AutoUpdater: ошибка проверки:", error);
 
         if (
-            data.version &&
-            data.version !== currentVersion
+            mainWindow &&
+            !mainWindow.isDestroyed() &&
+            !mainWindow.webContents.isDestroyed()
         ) {
-            mainWindow?.webContents.send(
+            mainWindow.webContents.send(
                 "update-check-result",
                 {
-                    status: "available",
-                    currentVersion,
-                    latestVersion: data.version
-                }
-            );
-        } else {
-            mainWindow?.webContents.send(
-                "update-check-result",
-                {
-                    status: "up-to-date",
-                    currentVersion
+                    status: "unavailable",
+                    currentVersion: app.getVersion(),
+                    error: error?.message || String(error)
                 }
             );
         }
-    } catch (error) {
-        mainWindow?.webContents.send(
-            "update-check-result",
-            {
-                status: "unavailable",
-                currentVersion: app.getVersion(),
-                error: error.message
-            }
-        );
     }
 }
-
 
 function sendOverlaySettings() {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1990,6 +1970,20 @@ ipcMain.on(
         checkForUpdates();
     }
 );
+ipcMain.on(
+    "general-install-update",
+    () => {
+        if (!app.isPackaged) {
+            return;
+        }
+
+        try {
+            autoUpdater.quitAndInstall();
+        } catch (error) {
+            console.error("AutoUpdater: ошибка установки:", error);
+        }
+    }
+);
 
 /* =========================
    OVERLAY IPC
@@ -2106,6 +2100,10 @@ ipcMain.on(
 
         if (!/^#[0-9a-fA-F]{6}$/.test(String(overlaySettings.usernameColor))) {
             overlaySettings.usernameColor = "#ffffff";
+        }
+
+        if (!["twitch", "custom"].includes(overlaySettings.usernameColorMode)) {
+            overlaySettings.usernameColorMode = "twitch";
         }
 
         if (!["normal", "bold", "italic", "bold-italic"].includes(overlaySettings.usernameStyle)) {
@@ -2732,6 +2730,94 @@ ipcMain.on("profiles-delete", (event, name) => {
 /* =========================
    APP START
 ========================= */
+function setupAutoUpdater() {
+    if (!app.isPackaged) {
+        console.log("AutoUpdater: development mode, skipped");
+        return;
+    }
+
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on("checking-for-update", () => {
+        console.log("AutoUpdater: проверка обновлений...");
+    });
+
+    autoUpdater.on("update-available", (info) => {
+        console.log("AutoUpdater: доступно обновление:", info.version);
+
+        if (
+            mainWindow &&
+            !mainWindow.isDestroyed() &&
+            !mainWindow.webContents.isDestroyed()
+        ) {
+            mainWindow.webContents.send("update-check-result", {
+                status: "available",
+                currentVersion: app.getVersion(),
+                latestVersion: info.version
+            });
+        }
+    });
+
+    autoUpdater.on("update-not-available", () => {
+        console.log("AutoUpdater: установлена последняя версия");
+
+        if (
+            mainWindow &&
+            !mainWindow.isDestroyed() &&
+            !mainWindow.webContents.isDestroyed()
+        ) {
+            mainWindow.webContents.send("update-check-result", {
+                status: "up-to-date",
+                currentVersion: app.getVersion()
+            });
+        }
+    });
+
+    autoUpdater.on("download-progress", (progress) => {
+        if (
+            mainWindow &&
+            !mainWindow.isDestroyed() &&
+            !mainWindow.webContents.isDestroyed()
+        ) {
+            mainWindow.webContents.send("update-download-progress", {
+                percent: progress.percent,
+                transferred: progress.transferred,
+                total: progress.total
+            });
+        }
+    });
+
+    autoUpdater.on("update-downloaded", (info) => {
+        console.log("AutoUpdater: обновление загружено:", info.version);
+
+        if (
+            mainWindow &&
+            !mainWindow.isDestroyed() &&
+            !mainWindow.webContents.isDestroyed()
+        ) {
+            mainWindow.webContents.send("update-downloaded", {
+                version: info.version
+            });
+        }
+    });
+
+    autoUpdater.on("error", (error) => {
+        console.error("AutoUpdater error:", error);
+
+        if (
+            mainWindow &&
+            !mainWindow.isDestroyed() &&
+            !mainWindow.webContents.isDestroyed()
+        ) {
+            mainWindow.webContents.send("update-check-result", {
+                status: "unavailable",
+                currentVersion: app.getVersion(),
+                error: error?.message || String(error)
+            });
+        }
+    });
+}
 
 app.whenReady().then(
     async () => {
@@ -2742,6 +2828,7 @@ app.whenReady().then(
 
         createWindow();
         registerHotkeys();
+        setupAutoUpdater();
 
         setTimeout(
             () => {

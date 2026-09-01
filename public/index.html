@@ -1081,7 +1081,7 @@ body.theme-light .nav-item { color:#4d5360; }
 </div>
 <div class="section">
 <div class="section-title">Имя пользователя</div>
-<div class="setting-row"><div class="setting-label">Цвет имени пользователя</div><input class="color" id="chatUsernameColor" type="color" value="#ffffff"></div>
+<div class="setting-row"><div class="setting-label">Цвет имени пользователя</div><input class="color" id="chatUsernameColor" type="color" value="#ffffff"><select class="select" id="chatUsernameColorMode"><option value="twitch">Цвет Twitch</option><option value="custom">Свой цвет</option></select></div>
 <div class="setting-row"><div class="setting-label">Стиль имени пользователя</div><select class="select" id="chatUsernameStyle"><option value="normal">Обычный</option><option value="bold" selected>Жирный</option><option value="italic">Курсив</option><option value="bold-italic">Жирный + курсив</option></select></div>
 </div>
 </section>
@@ -1655,21 +1655,56 @@ function collectGeneralSettings() {
     };
 }
 
-function applyGeneralTheme() {
-    if (typeof appearanceState !== "undefined" && appearanceState.theme === "light") {
+async function applyGeneralTheme() {
+    if (generalState.autoBackgroundTheme) {
+        try {
+            const detected =
+                await window.electronAPI?.detectScreenTheme?.();
+
+            if (detected?.success) {
+                document.body.classList.toggle(
+                    "theme-light",
+                    detected.theme === "light"
+                );
+                return;
+            }
+        } catch (error) {
+            console.error(
+                "Ошибка автоопределения темы:",
+                error
+            );
+        }
+
+        const media =
+            window.matchMedia(
+                "(prefers-color-scheme: light)"
+            );
+
+        document.body.classList.toggle(
+            "theme-light",
+            media.matches
+        );
+
+        return;
+    }
+
+    const theme =
+        typeof appearanceState !== "undefined"
+            ? appearanceState.theme
+            : "dark";
+
+    if (theme === "light") {
         document.body.classList.add("theme-light");
-        return;
-    }
-    if (typeof appearanceState !== "undefined" && appearanceState.theme === "dark") {
+    } else if (theme === "system") {
+        document.body.classList.toggle(
+            "theme-light",
+            window.matchMedia(
+                "(prefers-color-scheme: light)"
+            ).matches
+        );
+    } else {
         document.body.classList.remove("theme-light");
-        return;
     }
-    if (!generalState.autoBackgroundTheme) {
-        document.body.classList.remove("theme-light");
-        return;
-    }
-    const media = window.matchMedia("(prefers-color-scheme: light)");
-    document.body.classList.toggle("theme-light", media.matches);
 }
 
 let backgroundThemeTimer = null;
@@ -2082,6 +2117,28 @@ if (window.electronAPI?.onUpdateCheckResult) {
     );
 }
 
+if (window.electronAPI?.onUpdateDownloadProgress) {
+    window.electronAPI.onUpdateDownloadProgress(
+        (progress) => {
+            if (progress?.percent >= 0 && window.showToast) {
+                window.showToast(
+                    `Загрузка обновления: ${Math.round(progress.percent)}%`
+                );
+            }
+        }
+    );
+}
+
+if (window.electronAPI?.onUpdateDownloaded) {
+    window.electronAPI.onUpdateDownloaded(
+        (data) => {
+            window.showToast?.(
+                `Обновление ${data?.version || ""} загружено. Оно установится при закрытии приложения.`
+            );
+        }
+    );
+}
+
 
 
 /* =========================
@@ -2105,8 +2162,9 @@ function applyAppearanceSettings(settings) {
     if (appearanceColorPreview) appearanceColorPreview.style.background = color;
     document.documentElement.style.setProperty("--ui-scale", appearanceState.textScale === "small" ? "0.92" : appearanceState.textScale === "large" ? "1.08" : "1");
     document.body.style.zoom = appearanceState.textScale === "small" ? "0.92" : appearanceState.textScale === "large" ? "1.08" : "1";
-    document.body.classList.toggle("theme-light", appearanceState.theme === "light" || (appearanceState.theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches));
-    if (typeof restartBackgroundThemeCheck === "function") restartBackgroundThemeCheck();
+    if (typeof restartBackgroundThemeCheck === "function") {
+        restartBackgroundThemeCheck();
+    }
 }
 function collectAppearanceSettings() { return { primaryColor: appearancePrimaryColor?.value || "#9147ff", textScale: appearanceTextScale?.value || "medium", theme: appearanceTheme?.value || "dark", overlayEditBorder: appearanceEditBorder?.classList.contains("on") !== false }; }
 function sendAppearanceSettings() { window.electronAPI?.setAppearanceSettings?.(collectAppearanceSettings()); }
@@ -2361,42 +2419,28 @@ function renderProfiles(data) {
 
         rename.addEventListener(
             "click",
-            async () => {
-
+            () => {
                 const newName = prompt(
-    "Введите новое название профиля:",
-    name
-);
+                    "Введите новое название профиля:",
+                    name
+                );
 
-if (!newName) {
-    return;
-}
-
-const trimmedName =
-    newName.trim();
-
-if (!trimmedName) {
-    return;
-}
-
-window.electronAPI
-    ?.renameProfile
-    ?.(
-        name,
-        trimmedName
-    );
-
-
-                if (
-                    result?.success
-                ) {
-
-                    window.showToast?.(
-                        "Профиль переименован"
-                    );
-
+                if (!newName) {
+                    return;
                 }
 
+                const trimmedName = newName.trim();
+
+                if (!trimmedName || trimmedName === name) {
+                    return;
+                }
+
+                window.electronAPI
+                    ?.renameProfile
+                    ?.(
+                        name,
+                        trimmedName
+                    );
             }
         );
 
@@ -2491,40 +2535,26 @@ document
     )
     ?.addEventListener(
         "click",
-        async () => {
-const name =
-    prompt(
-        "Введите название нового профиля:"
-    );
+        () => {
+            const name = prompt(
+                "Введите название нового профиля:"
+            );
 
-if (!name) {
-    return;
-}
-
-const trimmedName =
-    name.trim();
-
-if (!trimmedName) {
-    return;
-}
-
-window.electronAPI
-    ?.createProfile
-    ?.(
-        trimmedName
-    );
-
-
-            if (
-                result?.success
-            ) {
-
-                window.showToast?.(
-                    "Профиль создан"
-                );
-
+            if (!name) {
+                return;
             }
 
+            const trimmedName = name.trim();
+
+            if (!trimmedName) {
+                return;
+            }
+
+            window.electronAPI
+                ?.createProfile
+                ?.(
+                    trimmedName
+                );
         }
     );
 
@@ -2765,6 +2795,7 @@ const chatFontSize = document.getElementById("chatFontSize");
 const chatMaxMessages = document.getElementById("chatMaxMessages");
 const chatMessageDuration = document.getElementById("chatMessageDuration");
 const chatUsernameColor = document.getElementById("chatUsernameColor");
+const chatUsernameColorMode = document.getElementById("chatUsernameColorMode");
 const chatUsernameStyle = document.getElementById("chatUsernameStyle");
 const chatHorizontal = document.getElementById("chatHorizontal");
 const chatVertical = document.getElementById("chatVertical");
@@ -2791,16 +2822,16 @@ fontSize:Number(chatFontSize?.value)||20,
 opacity: Number.isFinite(Number(opacitySlider?.value)) ? Number(opacitySlider.value) : 85,
 maxMessages:Number(chatMaxMessages?.value)||10,
 messageDuration:Number(chatMessageDuration?.value)||30,
-usernameColor:chatUsernameColor?.value||"#ffffff", usernameStyle:chatUsernameStyle?.value||"bold",
+usernameColor:chatUsernameColor?.value||"#ffffff", usernameColorMode:chatUsernameColorMode?.value||"twitch", usernameStyle:chatUsernameStyle?.value||"bold",
 chatHorizontal:chatHorizontal?.value||"left", chatVertical:chatVertical?.value||"top",
-messageBackgroundEnabled:switchState(messageBackgroundEnabled,false), messageBackgroundOpacity:Number(messageBackgroundOpacity?.value)||70,
-messageBorderRadius:Number(messageBorderRadius?.value)||6, messagePadding:Number(messagePadding?.value)||2, messageGap:Number(messageGap?.value)||5,
+messageBackgroundEnabled:switchState(messageBackgroundEnabled,false), messageBackgroundOpacity: Number.isFinite(Number(messageBackgroundOpacity?.value)) ? Number(messageBackgroundOpacity.value) : 70,
+messageBorderRadius: Number.isFinite(Number(messageBorderRadius?.value)) ? Number(messageBorderRadius.value) : 6, messagePadding: Number.isFinite(Number(messagePadding?.value)) ? Number(messagePadding.value) : 2, messageGap: Number.isFinite(Number(messageGap?.value)) ? Number(messageGap.value) : 5,
 textShadowEnabled:switchState(textShadowEnabled,true), emoteSize:Number(emoteSize?.value)||30, badgeSize:Number(badgeSize?.value)||20,
-emoteSpacing:Number(emoteSpacing?.value)||2, showTwitchEmotes:switchState(showTwitchEmotes,true), showBadges:switchState(showBadges,true),
+emoteSpacing: Number.isFinite(Number(emoteSpacing?.value)) ? Number(emoteSpacing.value) : 2, showTwitchEmotes:switchState(showTwitchEmotes,true), showBadges:switchState(showBadges,true),
 showBttvEmotes:switchState(emotesBttvEnabled,true), show7tvEmotes:switchState(emotes7tvEnabled,true), animatedEmotes:switchState(emotesAnimatedEnabled,true), showUnicodeEmotes:switchState(emotesUnicodeEnabled,true),
 messageEnterEnabled:switchState(messageEnterEnabled,true), messageEnterType:messageEnterType?.value||"fade",
-messageEnterDuration:Number(messageEnterDuration?.value)||0.2, messageExitEnabled:switchState(messageExitEnabled,true),
-messageExitType:messageExitType?.value||"fade", messageExitDuration:Number(messageExitDuration?.value)||0.25
+messageEnterDuration: Number.isFinite(Number(messageEnterDuration?.value)) ? Number(messageEnterDuration.value) : 0.2, messageExitEnabled:switchState(messageExitEnabled,true),
+messageExitType:messageExitType?.value||"fade", messageExitDuration: Number.isFinite(Number(messageExitDuration?.value)) ? Number(messageExitDuration.value) : 0.25
 }; }
 function applySettingsToPanel(settings){ if(!settings)return; const setN=(e,v,min,max,d)=>{if(!e)return;let n=Number(v);if(!Number.isFinite(n))n=d;e.value=Math.max(min,Math.min(max,n));};
 setN(chatFontSize,settings.fontSize,10,100,20);setN(opacitySlider,settings.opacity,0,100,85);setN(chatMaxMessages,settings.maxMessages,1,100,10);setN(chatMessageDuration,settings.messageDuration,1,600,30);
@@ -2811,13 +2842,13 @@ if(messageExitType)messageExitType.value=["fade","left","right","top","bottom","
 setN(messageBackgroundOpacity,settings.messageBackgroundOpacity,0,100,70);setN(messageBorderRadius,settings.messageBorderRadius,0,50,6);setN(messagePadding,settings.messagePadding,0,50,2);setN(messageGap,settings.messageGap,0,50,5);
 setN(emoteSize,settings.emoteSize,16,100,30);setN(badgeSize,settings.badgeSize,12,60,20);setN(emoteSpacing,settings.emoteSpacing,0,20,2);
 if(opacityValue&&opacitySlider){opacityValue.textContent=opacitySlider.value+"%";opacitySlider.style.setProperty("--value",opacitySlider.value+"%");}
-if(chatUsernameColor)chatUsernameColor.value=settings.usernameColor||"#ffffff";if(chatUsernameStyle)chatUsernameStyle.value=settings.usernameStyle||"bold";if(chatHorizontal)chatHorizontal.value=settings.chatHorizontal||"left";if(chatVertical)chatVertical.value=settings.chatVertical||"top";
+if(chatUsernameColor)chatUsernameColor.value=settings.usernameColor||"#ffffff";if(chatUsernameColorMode)chatUsernameColorMode.value=["twitch","custom"].includes(settings.usernameColorMode)?settings.usernameColorMode:"twitch";if(chatUsernameStyle)chatUsernameStyle.value=settings.usernameStyle||"bold";if(chatHorizontal)chatHorizontal.value=settings.chatHorizontal||"left";if(chatVertical)chatVertical.value=settings.chatVertical||"top";
 [[messageBackgroundEnabled,settings.messageBackgroundEnabled],[textShadowEnabled,settings.textShadowEnabled!==false],[showTwitchEmotes,settings.showTwitchEmotes!==false],[showBadges,settings.showBadges!==false]].forEach(([e,v])=>{if(e)e.classList.toggle("on",Boolean(v));});
 [[emotesTwitchEnabled,settings.showTwitchEmotes!==false],[emotesBttvEnabled,settings.showBttvEmotes!==false],[emotes7tvEnabled,settings.show7tvEmotes!==false],[emotesAnimatedEnabled,settings.animatedEmotes!==false],[emotesUnicodeEnabled,settings.showUnicodeEmotes!==false]].forEach(([e,v])=>{if(e)e.classList.toggle("on",Boolean(v));});
 if(emotesSize)emotesSize.value=String(settings.emoteSize||30); }
 function sendOverlaySettings(){ if(window.electronAPI?.setOverlaySettings) window.electronAPI.setOverlaySettings(collectOverlaySettings()); }
-[opacitySlider,chatFontSize,chatMaxMessages,chatMessageDuration,chatUsernameColor,chatUsernameStyle,chatHorizontal,chatVertical,messageBackgroundOpacity,messageBorderRadius,messagePadding,messageGap,emoteSize,badgeSize,emoteSpacing,messageEnterType,messageEnterDuration,messageExitType,messageExitDuration].filter(Boolean).forEach(e=>{e.addEventListener("input",()=>{if(e===opacitySlider&&opacityValue){opacityValue.textContent=e.value+"%";e.style.setProperty("--value",e.value+"%");}sendOverlaySettings();});e.addEventListener("change",sendOverlaySettings);});
-[messageBackgroundEnabled,textShadowEnabled,showTwitchEmotes,showBadges,messageEnterEnabled,messageExitEnabled].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendOverlaySettings();}));
+[opacitySlider,chatFontSize,chatMaxMessages,chatMessageDuration,chatUsernameColor,chatUsernameColorMode,chatUsernameStyle,chatHorizontal,chatVertical,messageBackgroundOpacity,messageBorderRadius,messagePadding,messageGap,emoteSize,badgeSize,emoteSpacing,messageEnterType,messageEnterDuration,messageExitType,messageExitDuration].filter(Boolean).forEach(e=>{e.addEventListener("input",()=>{if(e===opacitySlider&&opacityValue){opacityValue.textContent=e.value+"%";e.style.setProperty("--value",e.value+"%");}sendOverlaySettings();});e.addEventListener("change",sendOverlaySettings);});
+[messageBackgroundEnabled,textShadowEnabled,showTwitchEmotes,showBadges,emotesBttvEnabled,emotes7tvEnabled,emotesAnimatedEnabled,emotesUnicodeEnabled,messageEnterEnabled,messageExitEnabled].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendOverlaySettings();}));
 if(window.electronAPI?.getOverlaySettings)window.electronAPI.getOverlaySettings().then(applySettingsToPanel).catch(e=>console.error("Ошибка загрузки настроек Overlay:",e));
 if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(applySettingsToPanel);
 </script>

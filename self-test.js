@@ -1,10 +1,15 @@
 const fs = require("fs");
+const cp = require("child_process");
 const path = require("path");
 const root = __dirname;
 const read = p => fs.readFileSync(path.join(root,p), "utf8");
 const main = read("main.js"), preload = read("preload.js"), op = read("overlay-preload.js");
 const index = read("public/index.html"), overlay = read("public/overlay.html");
 let failed = false;
+for (const file of ["main.js", "preload.js", "overlay-preload.js", "server.js"]) {
+  const result = cp.spawnSync(process.execPath, ["--check", path.join(root, file)], { encoding: "utf8" });
+  check(result.status === 0, `Syntax error in ${file}: ${result.stderr || ""}`);
+}
 function check(ok,msg){ if(!ok){console.error("FAIL:",msg); failed=true;} }
 
 const on = new Set([...main.matchAll(/ipcMain\.on\(\s*["']([^"']+)["']/g)].map(x=>x[1]));
@@ -30,6 +35,13 @@ for(const field of ["fontSize","opacity","maxMessages","messageDuration","emoteS
 
 check(/loadThirdPartyEmotes\(channel\)/.test(main),"Third-party emote loading is not invoked after chat connection");
 check(/profiles-create/.test(main)&&/profiles-rename/.test(main)&&/profiles-delete/.test(main),"Profile handlers incomplete");
+check(/require\(["']electron-updater["']\)/.test(main),"electron-updater is not imported");
+check(/function setupAutoUpdater\s*\(/.test(main),"AutoUpdater setup function missing");
+check(/autoUpdater\.checkForUpdates\(\)/.test(main),"AutoUpdater check call missing");
+check(!/registry\.npmjs\.org\/twitchoverlay\/latest/.test(main),"Old npm update checker still present");
+check(/usernameColorMode/.test(main)&&/usernameColorMode/.test(index)&&/usernameColorMode/.test(overlay),"Username color mode integration incomplete");
+check(/detectScreenTheme/.test(preload)&&/desktopCapturer/.test(preload),"Screen theme detection missing");
+
 
 if(failed) process.exit(1);
 console.log("PASS: integration/static audit");

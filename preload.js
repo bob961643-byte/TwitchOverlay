@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, desktopCapturer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
 
@@ -25,6 +25,82 @@ contextBridge.exposeInMainWorld("electronAPI", {
         );
     },
 
+    installUpdate: () => {
+        ipcRenderer.send(
+            "general-install-update"
+        );
+    },
+
+    detectScreenTheme: async () => {
+        try {
+            const sources = await desktopCapturer.getSources({
+                types: ["screen"],
+                thumbnailSize: {
+                    width: 48,
+                    height: 48
+                },
+                fetchWindowIcons: false
+            });
+
+            const source = sources[0];
+
+            if (!source || !source.thumbnail) {
+                return {
+                    success: false,
+                    theme: "dark"
+                };
+            }
+
+            const image = source.thumbnail;
+            const size = image.getSize();
+            const bitmap = image.toBitmap();
+
+            if (!size.width || !size.height || !bitmap.length) {
+                return {
+                    success: false,
+                    theme: "dark"
+                };
+            }
+
+            let luminanceSum = 0;
+            let pixels = 0;
+
+            for (let i = 0; i + 2 < bitmap.length; i += 4) {
+                const r = bitmap[i];
+                const g = bitmap[i + 1];
+                const b = bitmap[i + 2];
+
+                luminanceSum +=
+                    0.2126 * r +
+                    0.7152 * g +
+                    0.0722 * b;
+
+                pixels++;
+            }
+
+            const luminance =
+                pixels > 0
+                    ? luminanceSum / pixels
+                    : 0;
+
+            return {
+                success: pixels > 0,
+                theme: luminance >= 145 ? "light" : "dark",
+                luminance
+            };
+        } catch (error) {
+            console.error(
+                "Ошибка определения темы по экрану:",
+                error
+            );
+
+            return {
+                success: false,
+                theme: "dark"
+            };
+        }
+    },
+
     onGeneralSettings: (callback) => {
         ipcRenderer.on(
             "general-settings",
@@ -39,6 +115,24 @@ contextBridge.exposeInMainWorld("electronAPI", {
             "update-check-result",
             (event, result) => {
                 callback(result);
+            }
+        );
+    },
+
+    onUpdateDownloadProgress: (callback) => {
+        ipcRenderer.on(
+            "update-download-progress",
+            (event, progress) => {
+                callback(progress);
+            }
+        );
+    },
+
+    onUpdateDownloaded: (callback) => {
+        ipcRenderer.on(
+            "update-downloaded",
+            (event, data) => {
+                callback(data);
             }
         );
     },

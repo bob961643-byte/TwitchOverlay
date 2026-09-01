@@ -945,9 +945,16 @@ function addMessage(message) {
         "Unknown";
 
     username.style.color =
-        overlaySettings.usernameColor ||
-        message.color ||
-        "#ffffff";
+        overlaySettings.usernameColorMode === "custom"
+            ? (
+                overlaySettings.usernameColor ||
+                "#ffffff"
+            )
+            : (
+                message.color ||
+                overlaySettings.usernameColor ||
+                "#ffffff"
+            );
 
     messageElement.appendChild(
         username
