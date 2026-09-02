@@ -2036,7 +2036,7 @@ ipcMain.handle(
     "general-get-settings",
     () => generalSettings
 );
-
+ipcMain.handle("app-get-version", () => app.getVersion());
 ipcMain.on(
     "general-set-settings",
     (event, incoming) => {

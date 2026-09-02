@@ -41,17 +41,6 @@ select {
     font: inherit;
 }
 
-body.theme-dark {
-    color-scheme: dark;
-    --bg: #0e1016; --sidebar: #151821; --sidebar-hover: #1c202b;
-    --active: #29213d; --panel: #1a1e27; --input: #141821;
-    --border: #292e39; --text: #f1f1f4; --muted: #979daa;
-}
-body.theme-dark .titlebar { background:#11131a; border-bottom-color:#292d37; }
-body.theme-dark .section-title { color:#f0f1f3; }
-body.theme-dark .setting-label { color:#dedfe4; }
-body.theme-dark .select, body.theme-dark .input, body.theme-dark .hotkey, body.theme-dark .profile { color:#e8e9ed; }
-
 body.theme-light {
     --bg: #f4f5f7;
     --sidebar: #ffffff;
@@ -735,7 +724,7 @@ body.theme-light .nav-item { color:#4d5360; }
 </style>
 </head>
 
-<body class="theme-dark">
+<body>
 
 <!-- =========================
      TITLE BAR
@@ -906,40 +895,6 @@ body.theme-light .nav-item { color:#4d5360; }
     <div class="setting-row check-row">
         <div class="checkbox checked" id="generalCheckUpdates"></div>
         <div class="setting-label">Проверять обновления при запуске</div>
-    </div>
-
-    <div class="setting-row">
-        <div class="setting-label">Запоминать Twitch-аккаунт</div>
-        <div class="switch on" id="generalRememberTwitchAccount"></div>
-    </div>
-
-    <div class="setting-row">
-        <div class="setting-label">Фильтр для сообщений</div>
-        <div class="switch" id="generalMessageFilterEnabled"></div>
-    </div>
-
-    <div class="setting-row">
-        <div>
-            <div class="setting-label">Слова фильтра</div>
-            <div class="setting-description">Слова через запятую или с новой строки</div>
-        </div>
-        <input class="input" id="generalMessageFilterWords" type="text" placeholder="слово1, слово2" style="width:320px;">
-    </div>
-
-    <div class="setting-row">
-        <div>
-            <div class="setting-label">Авто-проверка статуса чата</div>
-            <div class="setting-description">Если ваш Twitch-стрим начался, автоматически запускает Overlay и подключает чат</div>
-        </div>
-        <div class="switch" id="generalAutoChatStatus"></div>
-    </div>
-
-    <div class="setting-row">
-        <div>
-            <div class="setting-label">Подложка под яркость</div>
-            <div class="setting-description">Делать фон сообщения тёмным и полупрозрачным для лучшей читаемости</div>
-        </div>
-        <div class="switch" id="generalMessageBackdrop"></div>
     </div>
 
     <div class="setting-row">
@@ -1126,9 +1081,7 @@ body.theme-light .nav-item { color:#4d5360; }
 </div>
 <div class="section">
 <div class="section-title">Имя пользователя</div>
-<div class="setting-row"><div><div class="setting-label">Цвет имени пользователя по умолчанию</div><div class="setting-description">Используется, если Twitch не передал цвет пользователя</div></div><input class="color" id="chatUsernameColor" type="color" value="#ffffff"></div>
-<div class="setting-row"><div><div class="setting-label">Цвет пользователя из Twitch</div><div class="setting-description">Показывать каждому нику его собственный цвет, выбранный в Twitch</div></div><div class="switch on" id="chatUseTwitchUsernameColor" data-managed="true"></div></div>
-<div class="setting-row"><div><div class="setting-label">Удобные для восприятия цвета</div><div class="setting-description">Автоматически повышать контраст цветов ников на тёмном фоне</div></div><div class="switch on" id="chatReadableUsernameColors" data-managed="true"></div></div>
+<div class="setting-row"><div class="setting-label">Цвет имени пользователя</div><input class="color" id="chatUsernameColor" type="color" value="#ffffff"></div>
 <div class="setting-row"><div class="setting-label">Стиль имени пользователя</div><select class="select" id="chatUsernameStyle"><option value="normal">Обычный</option><option value="bold" selected>Жирный</option><option value="italic">Курсив</option><option value="bold-italic">Жирный + курсив</option></select></div>
 </div>
 </section>
@@ -1198,8 +1151,7 @@ body.theme-light .nav-item { color:#4d5360; }
     <div class="section-title">Управление оверлеем</div>
     <div class="setting-row"><div><div class="setting-label">Показать / скрыть оверлей</div><div class="setting-description">Глобальная комбинация работает даже когда приложение не в фокусе</div></div><button class="hotkey hotkey-input" id="hotkeyToggleOverlay" type="button">Ctrl + Shift + O</button></div>
     <div class="setting-row"><div><div class="setting-label">Показать настройки</div><div class="setting-description">Показывает и фокусирует главное окно</div></div><button class="hotkey hotkey-input" id="hotkeyShowSettings" type="button">Ctrl + Shift + S</button></div>
-    <div class="setting-row"><div><div class="setting-label">Редактировать оверлей</div><div class="setting-description">Открывает Overlay и переключает режим редактирования</div></div><button class="hotkey hotkey-input" id="hotkeyEditOverlay" type="button">Ctrl + Shift + M</button></div>
-    <div class="setting-row"><div><div class="setting-label">Подложка под яркость</div><div class="setting-description">Включить или выключить тёмный полупрозрачный фон сообщений</div></div><button class="hotkey hotkey-input" id="hotkeyToggleMessageBackdrop" type="button">Ctrl + Shift + B</button></div>
+    <div class="setting-row"><div><div class="setting-label">Переместить оверлей</div><div class="setting-description">Открывает Overlay и включает режим редактирования</div></div><button class="hotkey hotkey-input" id="hotkeyEditOverlay" type="button">Ctrl + Shift + M</button></div>
 </div>
 
 <div class="section">
@@ -1401,15 +1353,6 @@ body.theme-light .nav-item { color:#4d5360; }
 
     <div class="setting-row">
 
-        <div>
-            <div class="setting-label">Окно Overlay для захвата</div>
-            <div class="setting-description">В OBS выбирайте окно «Twitch Overlay — Overlay», а не «Twitch Overlay — Настройки»</div>
-        </div>
-
-    </div>
-
-    <div class="setting-row">
-
         <div class="setting-label">
             WebSocket
         </div>
@@ -1472,7 +1415,7 @@ body.theme-light .nav-item { color:#4d5360; }
 
         <h2>Twitch Overlay</h2>
 
-        <p>Версия 1.0.0</p>
+        <p id="appVersion">Версия</p>
 
         <p>
             Приложение для управления Twitch Overlay
@@ -1494,21 +1437,6 @@ body.theme-light .nav-item { color:#4d5360; }
     Настройки сохранены
 </div>
 
-
-<div id="profileNameModal" class="profile-modal" hidden>
-  <div class="profile-modal-backdrop"></div>
-  <div class="profile-modal-box">
-    <div class="section-title" id="profileModalTitle">Название профиля</div>
-    <input class="input" id="profileNameInput" type="text" maxlength="40" autocomplete="off">
-    <div class="profile-modal-actions">
-      <button class="small-button" id="profileModalCancel">Отмена</button>
-      <button class="small-button" id="profileModalConfirm">OK</button>
-    </div>
-  </div>
-</div>
-<style>
-.profile-modal[hidden]{display:none!important}.profile-modal{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center}.profile-modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55)}.profile-modal-box{position:relative;width:min(420px,calc(100% - 32px));padding:20px;border-radius:14px;background:#20242b;box-shadow:0 20px 60px rgba(0,0,0,.45)}.profile-modal-box .input{width:100%;box-sizing:border-box;margin-top:12px}.profile-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
-</style>
 <script>
 
 window.showToast = (message) => {
@@ -1568,11 +1496,25 @@ navItems.forEach((item) => {
    SWITCHES
 ========================= */
 
-// Все переключатели имеют собственные обработчики ниже.
-// Общий обработчик здесь не нужен: он вызывал двойное переключение
-// для внешнего вида, сообщений, эмодзи и Twitch.
-// Поэтому состояние каждого switch меняется ровно один раз.
+document
+    .querySelectorAll(".switch")
+    .forEach((switchElement) => {
 
+        if (
+            switchElement.dataset.managed === "true" ||
+            (switchElement.id && switchElement.id.startsWith("general"))
+        ) {
+            return;
+        }
+
+        switchElement.addEventListener(
+            "click",
+            () => {
+                switchElement.classList.toggle("on");
+            }
+        );
+
+    });
 
 
 /* =========================
@@ -1582,13 +1524,6 @@ navItems.forEach((item) => {
 document
     .querySelectorAll(".checkbox")
     .forEach((checkbox) => {
-
-        // Общий обработчик намеренно ничего не меняет.
-        // Общие чекбоксы ниже имеют собственный обработчик,
-        // который одновременно меняет UI и сохраняет состояние.
-        if (checkbox.id === "generalAutoStart" || checkbox.id === "generalCheckUpdates") {
-            return;
-        }
 
         checkbox.addEventListener(
             "click",
@@ -1653,11 +1588,6 @@ const generalAutoBackgroundTheme =
 
 const generalBackgroundInterval =
     document.getElementById("generalBackgroundInterval");
-const generalRememberTwitchAccount = document.getElementById("generalRememberTwitchAccount");
-const generalMessageFilterEnabled = document.getElementById("generalMessageFilterEnabled");
-const generalMessageFilterWords = document.getElementById("generalMessageFilterWords");
-const generalAutoChatStatus = document.getElementById("generalAutoChatStatus");
-const generalMessageBackdrop = document.getElementById("generalMessageBackdrop");
 
 let generalState = {
     autoStart: false,
@@ -1667,12 +1597,7 @@ let generalState = {
     showMessageTime: true,
     hideEmptyMessages: false,
     autoBackgroundTheme: true,
-    backgroundCheckInterval: 1,
-    rememberTwitchAccount: true,
-    messageFilterEnabled: false,
-    messageFilterWords: "",
-    autoChatStatus: false,
-    messageBackdropEnabled: false
+    backgroundCheckInterval: 1
 };
 
 function generalSwitchState(el, fallback) {
@@ -1684,14 +1609,16 @@ function generalSwitchState(el, fallback) {
 function collectGeneralSettings() {
     return {
         autoStart:
-            generalAutoStart
-                ? generalAutoStart.classList.contains("checked")
-                : Boolean(generalState.autoStart),
+            generalSwitchState(
+                generalAutoStart,
+                false
+            ),
 
         checkUpdates:
-            generalCheckUpdates
-                ? generalCheckUpdates.classList.contains("checked")
-                : Boolean(generalState.checkUpdates),
+            generalSwitchState(
+                generalCheckUpdates,
+                true
+            ),
 
         language:
             generalLanguage?.value ||
@@ -1724,24 +1651,25 @@ function collectGeneralSettings() {
         backgroundCheckInterval:
             Number(
                 generalBackgroundInterval?.value
-            ) || 1,
-
-        rememberTwitchAccount: generalSwitchState(generalRememberTwitchAccount, true),
-        messageFilterEnabled: generalSwitchState(generalMessageFilterEnabled, false),
-        messageFilterWords: generalMessageFilterWords?.value || "",
-        autoChatStatus: generalSwitchState(generalAutoChatStatus, false),
-        messageBackdropEnabled: generalSwitchState(generalMessageBackdrop, false)
+            ) || 1
     };
 }
 
 function applyGeneralTheme() {
-    const theme = typeof appearanceState !== "undefined" ? appearanceState.theme : "dark";
-    document.body.classList.remove("theme-light", "theme-dark");
-    if (theme === "light") { document.body.classList.add("theme-light"); return; }
-    if (theme === "dark") { document.body.classList.add("theme-dark"); return; }
-    if (!generalState.autoBackgroundTheme) { document.body.classList.add("theme-dark"); return; }
+    if (typeof appearanceState !== "undefined" && appearanceState.theme === "light") {
+        document.body.classList.add("theme-light");
+        return;
+    }
+    if (typeof appearanceState !== "undefined" && appearanceState.theme === "dark") {
+        document.body.classList.remove("theme-light");
+        return;
+    }
+    if (!generalState.autoBackgroundTheme) {
+        document.body.classList.remove("theme-light");
+        return;
+    }
     const media = window.matchMedia("(prefers-color-scheme: light)");
-    document.body.classList.add(media.matches ? "theme-light" : "theme-dark");
+    document.body.classList.toggle("theme-light", media.matches);
 }
 
 let backgroundThemeTimer = null;
@@ -1802,12 +1730,7 @@ const languageTexts = {
         "Автоматически подстраивать тему под фон": "Автоматически подстраивать тему под фон",
         "Интервал проверки фона": "Интервал проверки фона",
         "Прозрачность": "Прозрачность",
-        "Прозрачность оверлея:": "Прозрачность оверлея:",
-        "Запоминать Twitch-аккаунт": "Запоминать Twitch-аккаунт",
-        "Фильтр для сообщений": "Фильтр для сообщений",
-        "Слова фильтра": "Слова фильтра",
-        "Авто-проверка статуса чата": "Авто-проверка статуса чата",
-        "Подложка под яркость": "Подложка под яркость",
+        "Прозрачность оверлея:": "Прозрачность оверлея:"
     },
     "English": {
         "Настройки": "Settings",
@@ -1835,12 +1758,7 @@ const languageTexts = {
         "Русский": "Russian",
         "English": "English",
         "Deutsch": "German",
-        "Українська": "Ukrainian",
-        "Запоминать Twitch-аккаунт": "Remember Twitch account",
-        "Фильтр для сообщений": "Message filter",
-        "Слова фильтра": "Filter words",
-        "Авто-проверка статуса чата": "Auto-check chat status",
-        "Подложка под яркость": "Readability message backdrop"
+        "Українська": "Ukrainian"
     },
     "Deutsch": {
         "Настройки": "Einstellungen",
@@ -1868,17 +1786,7 @@ const languageTexts = {
         "Русский": "Russisch",
         "English": "Englisch",
         "Deutsch": "Deutsch",
-        "Українська": "Ukrainisch",
-        "Запоминать Twitch-аккаунт": "Twitch-Konto merken",
-        "Фильтр для сообщений": "Nachrichtenfilter",
-        "Слова фильтра": "Filterwörter",
-        "Авто-проверка статуса чата": "Chatstatus automatisch prüfen",
-        "Подложка под яркость": "Dunkler Nachrichtenhintergrund",
-        "Цвет пользователя из Twitch": "Benutzerfarbe aus Twitch",
-        "Удобные для восприятия цвета": "Lesbare Benutzerfarben",
-        "Цвет имени пользователя по умолчанию": "Standardfarbe des Benutzernamens",
-        "Цвет пользователя из Twitch": "Benutzerfarbe aus Twitch",
-        "Подложка под яркость": "Dunkler Nachrichtenhintergrund"
+        "Українська": "Ukrainisch"
     },
     "Українська": {
         "Настройки": "Налаштування",
@@ -1906,12 +1814,7 @@ const languageTexts = {
         "Русский": "Російська",
         "English": "Англійська",
         "Deutsch": "Німецька",
-        "Українська": "Українська",
-        "Запоминать Twitch-аккаунт": "Запам’ятовувати Twitch-акаунт",
-        "Фильтр для сообщений": "Фільтр повідомлень",
-        "Слова фильтра": "Слова фільтра",
-        "Авто-проверка статуса чата": "Автоперевірка статусу чату",
-        "Подложка под яркость": "Підкладка для читабельності"
+        "Українська": "Українська"
     }
 };
 
@@ -1984,9 +1887,7 @@ function applyInterfaceLanguage(language) {
             }
         });
     }
- }
-
-generalMessageFilterWords?.addEventListener("input", sendGeneralSettings);
+}
 
 function applyGeneralSettings(settings) {
 
@@ -2011,18 +1912,12 @@ function applyGeneralSettings(settings) {
 
         };
 
-    const setCheckbox = (element, value) => {
-        if (element) {
-            element.classList.toggle("checked", Boolean(value));
-        }
-    };
-
-    setCheckbox(
+    setSwitch(
         generalAutoStart,
         generalState.autoStart
     );
 
-    setCheckbox(
+    setSwitch(
         generalCheckUpdates,
         generalState.checkUpdates
     );
@@ -2046,12 +1941,6 @@ function applyGeneralSettings(settings) {
         generalAutoBackgroundTheme,
         generalState.autoBackgroundTheme
     );
-
-    setSwitch(generalRememberTwitchAccount, generalState.rememberTwitchAccount);
-    setSwitch(generalMessageFilterEnabled, generalState.messageFilterEnabled);
-    setSwitch(generalAutoChatStatus, generalState.autoChatStatus);
-    setSwitch(generalMessageBackdrop, generalState.messageBackdropEnabled);
-    if (generalMessageFilterWords) generalMessageFilterWords.value = generalState.messageFilterWords || "";
 
     if (generalLanguage) {
         generalLanguage.value =
@@ -2086,27 +1975,11 @@ function sendGeneralSettings() {
 
 [
     generalAutoStart,
-    generalCheckUpdates
-]
-    .filter(Boolean)
-    .forEach((element) => {
-        element.addEventListener("click", () => {
-            element.classList.toggle("checked");
-            generalState.autoStart = generalAutoStart?.classList.contains("checked") ?? false;
-            generalState.checkUpdates = generalCheckUpdates?.classList.contains("checked") ?? false;
-            sendGeneralSettings();
-        });
-    });
-
-[
+    generalCheckUpdates,
     generalAlwaysOnTop,
     generalShowMessageTime,
     generalHideEmptyMessages,
-    generalAutoBackgroundTheme,
-    generalRememberTwitchAccount,
-    generalMessageFilterEnabled,
-    generalAutoChatStatus,
-    generalMessageBackdrop
+    generalAutoBackgroundTheme
 ]
     .filter(Boolean)
     .forEach((element) => {
@@ -2232,10 +2105,7 @@ function applyAppearanceSettings(settings) {
     if (appearanceColorPreview) appearanceColorPreview.style.background = color;
     document.documentElement.style.setProperty("--ui-scale", appearanceState.textScale === "small" ? "0.92" : appearanceState.textScale === "large" ? "1.08" : "1");
     document.body.style.zoom = appearanceState.textScale === "small" ? "0.92" : appearanceState.textScale === "large" ? "1.08" : "1";
-    document.body.classList.remove("theme-light", "theme-dark");
-    if (appearanceState.theme === "light") document.body.classList.add("theme-light");
-    else if (appearanceState.theme === "dark") document.body.classList.add("theme-dark");
-    else if (typeof applyGeneralTheme === "function") applyGeneralTheme();
+    document.body.classList.toggle("theme-light", appearanceState.theme === "light" || (appearanceState.theme === "system" && window.matchMedia("(prefers-color-scheme: light)").matches));
     if (typeof restartBackgroundThemeCheck === "function") restartBackgroundThemeCheck();
 }
 function collectAppearanceSettings() { return { primaryColor: appearancePrimaryColor?.value || "#9147ff", textScale: appearanceTextScale?.value || "medium", theme: appearanceTheme?.value || "dark", overlayEditBorder: appearanceEditBorder?.classList.contains("on") !== false }; }
@@ -2253,68 +2123,31 @@ window.electronAPI?.onAppearanceSettings?.(applyAppearanceSettings);
 const hotkeyElements = {
     toggleOverlay: document.getElementById("hotkeyToggleOverlay"),
     showSettings: document.getElementById("hotkeyShowSettings"),
-    editOverlay: document.getElementById("hotkeyEditOverlay"),
-    toggleMessageBackdrop: document.getElementById("hotkeyToggleMessageBackdrop")
+    editOverlay: document.getElementById("hotkeyEditOverlay")
 };
-let hotkeyState = { toggleOverlay: "Ctrl+Shift+O", showSettings: "Ctrl+Shift+S", editOverlay: "Ctrl+Shift+M", toggleMessageBackdrop: "Ctrl+Shift+B" };
+let hotkeyState = { toggleOverlay: "CommandOrControl+Shift+O", showSettings: "CommandOrControl+Shift+S", editOverlay: "CommandOrControl+Shift+M" };
 function acceleratorToDisplay(accelerator) {
     return String(accelerator || "").replaceAll("CommandOrControl", "Ctrl").replaceAll("Control", "Ctrl").replaceAll("Alt", "Alt").replaceAll("Shift", "Shift").replaceAll("Plus", "+").split("+").map(p => p === "SPACE" ? "Space" : p.length === 1 ? p.toUpperCase() : p).join(" + ");
 }
 function eventToAccelerator(event) {
     const parts = [];
-    if (event.ctrlKey || event.metaKey) parts.push("Ctrl");
+    if (event.ctrlKey || event.metaKey) parts.push("CommandOrControl");
     if (event.altKey) parts.push("Alt");
     if (event.shiftKey) parts.push("Shift");
-
-    // Use event.code for the main key so the selected Windows keyboard layout
-    // does not change the shortcut. For example, Shift+Е on a Russian layout
-    // is still the physical KeyE and becomes Shift+E. Electron accelerators
-    // use A-Z/0-9 key codes, not localized characters.
-    const code = String(event.code || "");
-    const codeMap = {
-        Space: "Space",
-        Enter: "Enter",
-        NumpadEnter: "Enter",
-        Backspace: "Backspace",
-        Delete: "Delete",
-        Insert: "Insert",
-        Tab: "Tab",
-        Escape: "Esc",
-        ArrowUp: "Up",
-        ArrowDown: "Down",
-        ArrowLeft: "Left",
-        ArrowRight: "Right",
-        Home: "Home",
-        End: "End",
-        PageUp: "PageUp",
-        PageDown: "PageDown",
-        CapsLock: "Capslock",
-        NumLock: "Numlock",
-        ScrollLock: "Scrolllock"
-    };
-
-    let key = codeMap[code] || "";
-    if (!key && /^Key[A-Z]$/.test(code)) key = code.slice(3);
-    if (!key && /^Digit[0-9]$/.test(code)) key = code.slice(5);
-    if (!key && /^Numpad[0-9]$/.test(code)) key = code.slice(6);
-    if (!key && /^F([1-9]|1[0-9]|2[0-4])$/.test(code)) key = code;
-
-    // Fallback for punctuation and unusual keys when event.code is unavailable.
-    if (!key) {
-        const ignored = ["Control","Shift","Alt","Meta","OS","CapsLock","NumLock","ScrollLock","Fn"];
-        let raw = event.key;
-        if (ignored.includes(raw)) return null;
-        if (raw === " ") key = "Space";
-        else if (raw === "Escape") key = "Esc";
-        else if (raw === "Enter") key = "Enter";
-        else if (raw === "Backspace") key = "Backspace";
-        else if (raw === "Delete") key = "Delete";
-        else if (raw === "Tab") key = "Tab";
-        else if (raw.length === 1 && /[A-Za-z0-9]/.test(raw)) key = raw.toUpperCase();
-        else if (/^[A-Za-z0-9]+$/.test(raw)) key = raw;
-    }
-
-    if (!parts.length || !key) return null;
+    const ignored = ["Control","Shift","Alt","Meta","OS","CapsLock","NumLock","ScrollLock","Fn"];
+    let key = event.key;
+    if (ignored.includes(key)) return null;
+    if (key === " ") key = "Space";
+    else if (key.startsWith("F") && /^F([1-9]|1[0-9]|2[0-4])$/.test(key)) {}
+    else if (key.startsWith("Arrow")) key = key.replace("Arrow", "");
+    else if (key === "Escape") key = "Esc";
+    else if (key === "Enter") key = "Enter";
+    else if (key === "Backspace") key = "Backspace";
+    else if (key === "Delete") key = "Delete";
+    else if (key === "Tab") key = "Tab";
+    else if (key.length === 1) key = key.toUpperCase();
+    else if (!/^[A-Za-z0-9]+$/.test(key)) return null;
+    if (!parts.length) return null;
     parts.push(key);
     return parts.join("+");
 }
@@ -2322,175 +2155,448 @@ function applyHotkeys(settings) { hotkeyState = { ...settings }; Object.entries(
 Object.entries(hotkeyElements).forEach(([action, el]) => {
     el?.addEventListener("keydown", (event) => {
         event.preventDefault(); event.stopPropagation();
-        if (event.key === "Escape") {
-            applyHotkeys(hotkeyState);
-            el.classList.remove("recording");
-            window.electronAPI?.cancelHotkeyRecording?.();
-            return;
-        }
+        if (event.key === "Escape") { applyHotkeys(hotkeyState); el.classList.remove("recording"); return; }
         const accelerator = eventToAccelerator(event);
         if (!accelerator) return;
-        const normalizeCaptured = (value) => String(value || "").replaceAll("CommandOrControl", "Ctrl").toLowerCase();
-        const duplicate = Object.entries(hotkeyState).some(([a, v]) => a !== action && normalizeCaptured(v) === normalizeCaptured(accelerator));
+        const duplicate = Object.entries(hotkeyState).some(([a, v]) => a !== action && v === accelerator);
         if (duplicate) {
             applyHotkeys(hotkeyState);
             el.classList.remove("recording");
-            window.electronAPI?.cancelHotkeyRecording?.();
-            window.showToast("Эта комбинация уже используется другим действием");
+            window.showToast("Эта комбинация уже используется");
             return;
         }
-        hotkeyState[action] = accelerator;
-        el.textContent = acceleratorToDisplay(accelerator);
-        el.classList.remove("recording");
+        hotkeyState[action] = accelerator; el.textContent = acceleratorToDisplay(accelerator); el.classList.remove("recording");
         window.electronAPI?.setHotkeys?.(hotkeyState);
     });
-    el?.addEventListener("click", () => {
-        Object.values(hotkeyElements).forEach((other) => other?.classList.remove("recording"));
-        el.classList.add("recording");
-        el.focus();
-        el.textContent = "Нажмите комбинацию…";
-        window.electronAPI?.startHotkeyRecording?.(action);
-    });
-});
-window.addEventListener("blur", () => {
-    const recording = Object.values(hotkeyElements).some((el) => el?.classList.contains("recording"));
-    if (recording) {
-        Object.values(hotkeyElements).forEach((el) => el?.classList.remove("recording"));
-        window.electronAPI?.cancelHotkeyRecording?.();
-        window.electronAPI?.getHotkeys?.().then(applyHotkeys).catch(console.error);
-    }
+    el?.addEventListener("click", () => { el.classList.add("recording"); el.focus(); el.textContent = "Нажмите комбинацию…"; });
 });
 window.electronAPI?.getHotkeys?.().then(applyHotkeys).catch(console.error);
 window.electronAPI?.onHotkeys?.(applyHotkeys);
-window.electronAPI?.onHotkeysSaveResult?.(result => {
-    if (!result.success) {
+window.electronAPI?.onHotkeysSaveResult?.(result => { if (!result.success) {
         window.showToast(result.error || "Не удалось сохранить горячую клавишу");
+        // Возвращаем фактически зарегистрированные комбинации.
+        window.electronAPI?.getHotkeys?.().then(applyHotkeys).catch(console.error);
         Object.values(hotkeyElements).forEach((el) => el?.classList.remove("recording"));
+    } else {
         applyHotkeys(result.settings || hotkeyState);
-        return;
+        window.showToast("Горячая клавиша сохранена");
     }
-    Object.values(hotkeyElements).forEach((el) => el?.classList.remove("recording"));
-    applyHotkeys(result.settings || hotkeyState);
-    window.showToast("Горячая клавиша сохранена");
 });
-document.getElementById("resetHotkeysButton")?.addEventListener("click", () => { hotkeyState = { toggleOverlay: "Ctrl+Shift+O", showSettings: "Ctrl+Shift+S", editOverlay: "Ctrl+Shift+M", toggleMessageBackdrop: "Ctrl+Shift+B" }; applyHotkeys(hotkeyState); window.electronAPI?.setHotkeys?.(hotkeyState); });
-
-
+document.getElementById("resetHotkeysButton")?.addEventListener("click", () => { hotkeyState = { toggleOverlay: "CommandOrControl+Shift+O", showSettings: "CommandOrControl+Shift+S", editOverlay: "CommandOrControl+Shift+M" }; applyHotkeys(hotkeyState); window.electronAPI?.setHotkeys?.(hotkeyState); });
 /* =========================
    PROFILES
 ========================= */
 
-const profilesList = document.getElementById("profilesList");
-const activeProfileDescription = document.getElementById("activeProfileDescription");
-const createProfileButton = document.getElementById("createProfileButton");
-const saveCurrentProfileButton = document.getElementById("saveCurrentProfileButton");
-const profileNameModal = document.getElementById("profileNameModal");
-const profileNameInput = document.getElementById("profileNameInput");
-const profileModalTitle = document.getElementById("profileModalTitle");
-const profileModalConfirm = document.getElementById("profileModalConfirm");
-const profileModalCancel = document.getElementById("profileModalCancel");
+const profilesList =
+    document.getElementById("profilesList");
 
-let profilesState = { activeProfile: "Основной профиль", profiles: {} };
-let profileModalMode = null;
-let profileModalOldName = null;
+const activeProfileDescription =
+    document.getElementById(
+        "activeProfileDescription"
+    );
 
-function closeProfileModal() {
-    if (!profileNameModal) return;
-    profileNameModal.hidden = true;
-    profileModalMode = null;
-    profileModalOldName = null;
-}
+let profilesState = {
+    activeProfile:
+        "Основной профиль",
 
-function openProfileModal(mode, oldName = "") {
-    if (!profileNameModal || !profileNameInput) return;
-    profileModalMode = mode;
-    profileModalOldName = oldName;
-    if (profileModalTitle) profileModalTitle.textContent = mode === "rename" ? "Переименовать профиль" : "Создать профиль";
-    profileNameInput.value = oldName;
-    profileNameModal.hidden = false;
-    requestAnimationFrame(() => { profileNameInput.focus(); profileNameInput.select(); });
-}
+    profiles: {}
+};
 
-function confirmProfileModal() {
-    const name = String(profileNameInput?.value || "").trim();
-    if (!name) return window.showToast?.("Название не может быть пустым");
-    if (name.length > 40) return window.showToast?.("Максимум 40 символов");
-    if (profileModalMode === "rename") {
-        window.electronAPI?.renameProfile?.(profileModalOldName, name);
-    } else if (profileModalMode === "create") {
-        window.electronAPI?.createProfile?.(name);
-    }
-    closeProfileModal();
-}
-
-profileModalCancel?.addEventListener("click", closeProfileModal);
-profileNameModal?.querySelector(".profile-modal-backdrop")?.addEventListener("click", closeProfileModal);
-profileModalConfirm?.addEventListener("click", confirmProfileModal);
-profileNameInput?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") { event.preventDefault(); confirmProfileModal(); }
-    if (event.key === "Escape") { event.preventDefault(); closeProfileModal(); }
-});
 
 function renderProfiles(data) {
-    if (!data) return;
-    profilesState = data;
-    if (activeProfileDescription) activeProfileDescription.textContent = data.activeProfile || "Основной профиль";
-    if (!profilesList) return;
+
+    if (!data) {
+        return;
+    }
+
+
+    profilesState =
+        data;
+
+
+    if (activeProfileDescription) {
+
+        activeProfileDescription.textContent =
+            data.activeProfile ||
+            "Основной профиль";
+
+    }
+
+
+    if (!profilesList) {
+        return;
+    }
+
+
     profilesList.innerHTML = "";
-    const names = Object.keys(data.profiles || {});
-    if (!names.length) { profilesList.textContent = "Профили отсутствуют."; return; }
-    names.forEach((name) => {
-        const row = document.createElement("div");
-        row.className = "profile";
-        const info = document.createElement("div");
-        const profileName = document.createElement("div");
-        profileName.className = "profile-name";
-        profileName.textContent = name;
-        const profileInfo = document.createElement("div");
-        profileInfo.className = "profile-info";
-        profileInfo.textContent = name === data.activeProfile ? "Используется сейчас" : "Профиль Overlay";
-        info.append(profileName, profileInfo);
-        const actions = document.createElement("div");
-        actions.className = "profile-actions";
-        const select = document.createElement("button");
-        select.className = "small-button";
-        select.textContent = name === data.activeProfile ? "Активен" : "Выбрать";
-        select.disabled = name === data.activeProfile;
-        select.addEventListener("click", () => window.electronAPI?.selectProfile?.(name));
-        const rename = document.createElement("button");
-        rename.className = "small-button";
-        rename.textContent = "Переименовать";
-        rename.addEventListener("click", () => openProfileModal("rename", name));
-        actions.append(select, rename);
-        if (name !== "Основной профиль") {
-            const del = document.createElement("button");
-            del.className = "small-button";
-            del.textContent = "Удалить";
-            del.addEventListener("click", () => {
-                if (window.confirm(`Удалить профиль "${name}"?`)) window.electronAPI?.deleteProfile?.(name);
-            });
-            actions.appendChild(del);
+
+
+    const profileNames =
+        Object.keys(
+            data.profiles || {}
+        );
+
+
+    for (
+        const name of profileNames
+    ) {
+
+        const row =
+            document.createElement(
+                "div"
+            );
+
+        row.className =
+            "profile";
+
+
+        const info =
+            document.createElement(
+                "div"
+            );
+
+
+        const profileName =
+            document.createElement(
+                "div"
+            );
+
+        profileName.className =
+            "profile-name";
+
+        profileName.textContent =
+            name;
+
+
+        const profileInfo =
+            document.createElement(
+                "div"
+            );
+
+        profileInfo.className =
+            "profile-info";
+
+        profileInfo.textContent =
+            name ===
+            data.activeProfile
+                ? "Используется сейчас"
+                : "Профиль Overlay";
+
+
+        info.appendChild(
+            profileName
+        );
+
+        info.appendChild(
+            profileInfo
+        );
+
+
+        const actions =
+            document.createElement(
+                "div"
+            );
+
+        actions.className =
+            "profile-actions";
+
+
+        /* =====================
+           ВЫБРАТЬ
+        ===================== */
+
+        const select =
+            document.createElement(
+                "button"
+            );
+
+        select.className =
+            "small-button";
+
+        select.textContent =
+            name === data.activeProfile
+                ? "Активен"
+                : "Выбрать";
+
+        select.disabled =
+            name === data.activeProfile;
+
+
+        if (
+            name !==
+            data.activeProfile
+        ) {
+
+            select.addEventListener(
+                "click",
+                () => {
+
+                    window.electronAPI
+                        ?.selectProfile
+                        ?.(
+                            name
+                        );
+
+                }
+            );
+
         }
-        row.append(info, actions);
-        profilesList.appendChild(row);
-    });
+
+
+        /* =====================
+           ПЕРЕИМЕНОВАТЬ
+        ===================== */
+
+        const rename =
+            document.createElement(
+                "button"
+            );
+
+        rename.className =
+            "small-button";
+
+        rename.textContent =
+            "Переименовать";
+
+
+        rename.addEventListener(
+            "click",
+            async () => {
+
+                const newName = prompt(
+    "Введите новое название профиля:",
+    name
+);
+
+if (!newName) {
+    return;
 }
 
-createProfileButton?.addEventListener("click", () => openProfileModal("create"));
-saveCurrentProfileButton?.addEventListener("click", () => {
-    window.electronAPI?.updateCurrentProfile?.();
-});
+const trimmedName =
+    newName.trim();
 
-window.electronAPI?.getProfiles?.().then(renderProfiles).catch((error) => {
-    console.error("Ошибка загрузки профилей:", error);
-    window.showToast?.("Не удалось загрузить профили");
-});
-window.electronAPI?.onProfilesResult?.((result) => {
-    if (!result?.success) { window.showToast?.(result?.error || "Ошибка профиля"); return; }
-    renderProfiles(result.profiles);
-    window.showToast?.("Профили обновлены");
-});
+if (!trimmedName) {
+    return;
+}
 
+window.electronAPI
+    ?.renameProfile
+    ?.(
+        name,
+        trimmedName
+    );
+
+
+                if (
+                    result?.success
+                ) {
+
+                    window.showToast?.(
+                        "Профиль переименован"
+                    );
+
+                }
+
+            }
+        );
+
+
+        actions.appendChild(
+            select
+        );
+
+        actions.appendChild(
+            rename
+        );
+
+
+        /* =====================
+           УДАЛИТЬ
+        ===================== */
+
+        if (
+            name !==
+            "Основной профиль"
+        ) {
+
+            const del =
+                document.createElement(
+                    "button"
+                );
+
+            del.className =
+                "small-button";
+
+            del.textContent =
+                "Удалить";
+
+
+            del.addEventListener(
+                "click",
+                async () => {
+const confirmed =
+    confirm(
+        `Удалить профиль "${name}"?`
+    );
+
+
+                    if (
+                        confirmed
+                    ) {
+
+                        window.electronAPI
+                            ?.deleteProfile
+                            ?.(
+                                name
+                            );
+
+                    }
+
+                }
+            );
+
+
+            actions.appendChild(
+                del
+            );
+
+        }
+
+
+        row.appendChild(
+            info
+        );
+
+        row.appendChild(
+            actions
+        );
+
+
+        profilesList.appendChild(
+            row
+        );
+
+    }
+
+}
+
+
+/* =========================
+   СОЗДАТЬ ПРОФИЛЬ
+========================= */
+
+document
+    .getElementById(
+        "createProfileButton"
+    )
+    ?.addEventListener(
+        "click",
+        async () => {
+const name =
+    prompt(
+        "Введите название нового профиля:"
+    );
+
+if (!name) {
+    return;
+}
+
+const trimmedName =
+    name.trim();
+
+if (!trimmedName) {
+    return;
+}
+
+window.electronAPI
+    ?.createProfile
+    ?.(
+        trimmedName
+    );
+
+
+            if (
+                result?.success
+            ) {
+
+                window.showToast?.(
+                    "Профиль создан"
+                );
+
+            }
+
+        }
+    );
+
+
+/* =========================
+   СОХРАНИТЬ ПРОФИЛЬ
+========================= */
+
+document
+    .getElementById(
+        "saveCurrentProfileButton"
+    )
+    ?.addEventListener(
+        "click",
+        () => {
+
+            window.electronAPI
+                ?.updateCurrentProfile
+                ?.();
+
+        }
+    );
+
+
+/* =========================
+   ЗАГРУЗКА ПРОФИЛЕЙ
+========================= */
+
+window.electronAPI
+    ?.getProfiles
+    ?.()
+    .then(
+        renderProfiles
+    )
+    .catch(
+        console.error
+    );
+
+
+/* =========================
+   РЕЗУЛЬТАТ ОПЕРАЦИЙ
+========================= */
+
+window.electronAPI
+    ?.onProfilesResult
+    ?.(
+        (result) => {
+
+            if (
+                !result?.success
+            ) {
+
+                window.showToast?.(
+                    result?.error ||
+                    "Ошибка профиля"
+                );
+
+                return;
+
+            }
+
+
+            renderProfiles(
+                result.profiles
+            );
+
+            window.showToast?.(
+                "Профили обновлены"
+            );
+
+        }
+    );
 const twitchStatus = document.getElementById("twitchStatus");
 const chatStatus = document.getElementById("chatStatus");
 const twitchChatEnabled = document.getElementById("twitchChatEnabled");
@@ -2612,9 +2718,9 @@ connectChatButton?.addEventListener(
 
     }
 );
-launchOverlayButton?.addEventListener("click", () => { window.electronAPI?.showSettings?.(); window.electronAPI?.openOverlay?.(); });
-editOverlayButton?.addEventListener("click", () => { window.electronAPI?.showSettings?.(); window.electronAPI?.editOverlay?.(); });
-closeOverlayButton?.addEventListener("click", () => { window.electronAPI?.showSettings?.(); window.electronAPI?.closeOverlay?.(); });
+launchOverlayButton?.addEventListener("click", () => window.electronAPI?.openOverlay?.());
+editOverlayButton?.addEventListener("click", () => window.electronAPI?.editOverlay?.());
+closeOverlayButton?.addEventListener("click", () => window.electronAPI?.closeOverlay?.());
 twitchTest?.addEventListener("click", async () => { const s = await window.electronAPI?.getTwitchSessionStatus?.(); if (!s?.connected) window.showToast("Сначала войдите в Twitch"); else window.showToast(`Аккаунт Twitch: ${s.username || "подключён"}`); });
 window.electronAPI?.onTwitchLoginStarted?.(data => { if (data?.userCode) window.showToast(`Код Twitch: ${data.userCode}`); });
 window.electronAPI?.onTwitchLoginSuccess?.(() => { window.showToast("Twitch подключён"); refreshTwitchStatus(); });
@@ -2659,8 +2765,6 @@ const chatFontSize = document.getElementById("chatFontSize");
 const chatMaxMessages = document.getElementById("chatMaxMessages");
 const chatMessageDuration = document.getElementById("chatMessageDuration");
 const chatUsernameColor = document.getElementById("chatUsernameColor");
-const chatUseTwitchUsernameColor = document.getElementById("chatUseTwitchUsernameColor");
-const chatReadableUsernameColors = document.getElementById("chatReadableUsernameColors");
 const chatUsernameStyle = document.getElementById("chatUsernameStyle");
 const chatHorizontal = document.getElementById("chatHorizontal");
 const chatVertical = document.getElementById("chatVertical");
@@ -2687,7 +2791,7 @@ fontSize:Number(chatFontSize?.value)||20,
 opacity: Number.isFinite(Number(opacitySlider?.value)) ? Number(opacitySlider.value) : 85,
 maxMessages:Number(chatMaxMessages?.value)||10,
 messageDuration:Number(chatMessageDuration?.value)||30,
-usernameColor:chatUsernameColor?.value||"#ffffff", useTwitchUsernameColor:switchState(chatUseTwitchUsernameColor,true), readableUsernameColors:switchState(chatReadableUsernameColors,true), usernameStyle:chatUsernameStyle?.value||"bold",
+usernameColor:chatUsernameColor?.value||"#ffffff", usernameStyle:chatUsernameStyle?.value||"bold",
 chatHorizontal:chatHorizontal?.value||"left", chatVertical:chatVertical?.value||"top",
 messageBackgroundEnabled:switchState(messageBackgroundEnabled,false), messageBackgroundOpacity:Number(messageBackgroundOpacity?.value)||70,
 messageBorderRadius:Number(messageBorderRadius?.value)||6, messagePadding:Number(messagePadding?.value)||2, messageGap:Number(messageGap?.value)||5,
@@ -2707,17 +2811,29 @@ if(messageExitType)messageExitType.value=["fade","left","right","top","bottom","
 setN(messageBackgroundOpacity,settings.messageBackgroundOpacity,0,100,70);setN(messageBorderRadius,settings.messageBorderRadius,0,50,6);setN(messagePadding,settings.messagePadding,0,50,2);setN(messageGap,settings.messageGap,0,50,5);
 setN(emoteSize,settings.emoteSize,16,100,30);setN(badgeSize,settings.badgeSize,12,60,20);setN(emoteSpacing,settings.emoteSpacing,0,20,2);
 if(opacityValue&&opacitySlider){opacityValue.textContent=opacitySlider.value+"%";opacitySlider.style.setProperty("--value",opacitySlider.value+"%");}
-if(chatUsernameColor)chatUsernameColor.value=settings.usernameColor||"#ffffff";if(chatUseTwitchUsernameColor)chatUseTwitchUsernameColor.classList.toggle("on",settings.useTwitchUsernameColor!==false);if(chatReadableUsernameColors)chatReadableUsernameColors.classList.toggle("on",settings.readableUsernameColors!==false);if(chatUsernameStyle)chatUsernameStyle.value=settings.usernameStyle||"bold";if(chatHorizontal)chatHorizontal.value=settings.chatHorizontal||"left";if(chatVertical)chatVertical.value=settings.chatVertical||"top";
+if(chatUsernameColor)chatUsernameColor.value=settings.usernameColor||"#ffffff";if(chatUsernameStyle)chatUsernameStyle.value=settings.usernameStyle||"bold";if(chatHorizontal)chatHorizontal.value=settings.chatHorizontal||"left";if(chatVertical)chatVertical.value=settings.chatVertical||"top";
 [[messageBackgroundEnabled,settings.messageBackgroundEnabled],[textShadowEnabled,settings.textShadowEnabled!==false],[showTwitchEmotes,settings.showTwitchEmotes!==false],[showBadges,settings.showBadges!==false]].forEach(([e,v])=>{if(e)e.classList.toggle("on",Boolean(v));});
 [[emotesTwitchEnabled,settings.showTwitchEmotes!==false],[emotesBttvEnabled,settings.showBttvEmotes!==false],[emotes7tvEnabled,settings.show7tvEmotes!==false],[emotesAnimatedEnabled,settings.animatedEmotes!==false],[emotesUnicodeEnabled,settings.showUnicodeEmotes!==false]].forEach(([e,v])=>{if(e)e.classList.toggle("on",Boolean(v));});
 if(emotesSize)emotesSize.value=String(settings.emoteSize||30); }
 function sendOverlaySettings(){ if(window.electronAPI?.setOverlaySettings) window.electronAPI.setOverlaySettings(collectOverlaySettings()); }
 [opacitySlider,chatFontSize,chatMaxMessages,chatMessageDuration,chatUsernameColor,chatUsernameStyle,chatHorizontal,chatVertical,messageBackgroundOpacity,messageBorderRadius,messagePadding,messageGap,emoteSize,badgeSize,emoteSpacing,messageEnterType,messageEnterDuration,messageExitType,messageExitDuration].filter(Boolean).forEach(e=>{e.addEventListener("input",()=>{if(e===opacitySlider&&opacityValue){opacityValue.textContent=e.value+"%";e.style.setProperty("--value",e.value+"%");}sendOverlaySettings();});e.addEventListener("change",sendOverlaySettings);});
-[messageBackgroundEnabled,textShadowEnabled,showTwitchEmotes,showBadges,messageEnterEnabled,messageExitEnabled,chatUseTwitchUsernameColor,chatReadableUsernameColors].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendOverlaySettings();}));
+[messageBackgroundEnabled,textShadowEnabled,showTwitchEmotes,showBadges,messageEnterEnabled,messageExitEnabled].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendOverlaySettings();}));
 if(window.electronAPI?.getOverlaySettings)window.electronAPI.getOverlaySettings().then(applySettingsToPanel).catch(e=>console.error("Ошибка загрузки настроек Overlay:",e));
 if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(applySettingsToPanel);
 </script>
+<script>
+(async () => {
+    try {
+        const version = await window.electronAPI.getAppVersion();
+        const versionElement = document.getElementById("appVersion");
 
-
+        if (versionElement && version) {
+            versionElement.textContent = `Версия ${version}`;
+        }
+    } catch (error) {
+        console.error("Не удалось получить версию приложения:", error);
+    }
+})();
+</script>
 </body>
 </html>

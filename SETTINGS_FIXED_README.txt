@@ -1,0 +1,1 @@
+v17: hotkey assignment fixed. Changed shortcuts are registered independently so an unrelated occupied shortcut cannot block a new one. Windows uses Ctrl instead of CommandOrControl and compares shortcuts case-insensitively.
