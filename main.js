@@ -7,18 +7,56 @@ const {
     nativeTheme,
     globalShortcut,
     shell,
-    dialog
+    dialog,
+    Tray,
+    Menu,
+    nativeImage
 } = require("electron");
 const { autoUpdater } = require("electron-updater");
+
+autoUpdater.on("update-available", (info) => {
+    sendUpdateCheckResult({
+        status: "available",
+        currentVersion: app.getVersion(),
+        latestVersion: info?.version || null
+    });
+});
+
+autoUpdater.on("update-not-available", (info) => {
+    sendUpdateCheckResult({
+        status: "up-to-date",
+        currentVersion: app.getVersion(),
+        latestVersion: info?.version || app.getVersion()
+    });
+});
+
+autoUpdater.on("update-downloaded", (info) => {
+    sendUpdateCheckResult({
+        status: "downloaded",
+        currentVersion: app.getVersion(),
+        latestVersion: info?.version || null
+    });
+});
+
+autoUpdater.on("error", (error) => {
+    sendUpdateCheckResult({
+        status: "unavailable",
+        currentVersion: app.getVersion(),
+        error: error?.message || String(error)
+    });
+});
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const tmi = require("tmi.js");
+const WebSocket = require("ws");
 
 let mainWindow = null;
 let overlayWindow = null;
 let overlayReady = false;
 let overlayEditing = false;
 let pendingOverlayMessages = [];
+let tray = null;
 
 let twitchClient = null;
 let twitchToken = null;
@@ -33,6 +71,188 @@ const CLIENT_ID = "4u1wcqhcjw7ydzd933olj4yiouic7i";
 
 const TOKEN_FILE = "twitch-token.dat";
 
+
+/* =========================
+   SYSTEM TRAY
+========================= */
+
+function getTrayIconPath() {
+    return path.join(__dirname, "assets", "tray-icon.png");
+}
+
+function showSettingsWindow() {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        createWindow();
+        return;
+    }
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.moveTop();
+}
+
+function createTray() {
+    if (tray) return;
+
+    try {
+        const iconPath = getTrayIconPath();
+        const icon = fs.existsSync(iconPath)
+            ? nativeImage.createFromPath(iconPath)
+            : nativeImage.createEmpty();
+
+        tray = new Tray(icon);
+        tray.setToolTip("Twitch Overlay");
+        tray.setContextMenu(Menu.buildFromTemplate([
+            {
+                label: "Открыть настройки",
+                click: () => showSettingsWindow()
+            },
+            {
+                label: "Показать / скрыть Overlay",
+                click: () => handleHotkeyAction("toggleOverlay")
+            },
+            {
+                type: "separator"
+            },
+            {
+                label: "Закрыть программу",
+                click: () => closeApplication()
+            }
+        ]));
+
+        tray.on("double-click", () => showSettingsWindow());
+    } catch (error) {
+        console.error("Ошибка создания значка в области уведомлений:", error);
+        tray = null;
+    }
+}
+
+function destroyTray() {
+    if (!tray) return;
+    try { tray.destroy(); } catch {}
+    tray = null;
+}
+
+function closeApplication() {
+    if (app.isQuitting) return;
+    app.isQuitting = true;
+
+    try { globalShortcut.unregisterAll(); } catch {}
+
+    if (autoChatStatusTimer) {
+        clearInterval(autoChatStatusTimer);
+        autoChatStatusTimer = null;
+    }
+
+    if (twitchClient) {
+        const client = twitchClient;
+        twitchClient = null;
+        connectedChannel = null;
+        try { client.disconnect().catch(() => {}); } catch {}
+    }
+
+    obsDisconnect();
+
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+        try { saveOverlayBounds(); } catch {}
+        try { overlayWindow.destroy(); } catch {}
+    }
+    overlayWindow = null;
+    overlayReady = false;
+    overlayEditing = false;
+    pendingOverlayMessages = [];
+
+    destroyTray();
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        try { mainWindow.destroy(); } catch {}
+    }
+    mainWindow = null;
+
+    try { app.quit(); } catch {}
+}
+
+/* =========================
+   OBS WEBSOCKET
+========================= */
+
+const obsSettingsFile = path.join(app.getPath("userData"), "obs-settings.json");
+const defaultObsSettings = { host: "127.0.0.1", port: 4455, password: "" };
+let obsSettings = loadJsonFile?.(obsSettingsFile, defaultObsSettings) || { ...defaultObsSettings };
+let obsSocket = null;
+let obsRequestId = 0;
+let obsConnected = false;
+
+function saveObsSettings() {
+    try { fs.writeFileSync(obsSettingsFile, JSON.stringify(obsSettings, null, 4), "utf8"); return true; }
+    catch (error) { console.error("Ошибка сохранения OBS настроек:", error); return false; }
+}
+
+function sendObsStatus() {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("obs-status", { connected: obsConnected, host: obsSettings.host, port: obsSettings.port });
+    }
+}
+
+function obsDisconnect() {
+    obsConnected = false;
+    if (obsSocket) {
+        try { obsSocket.close(); } catch {}
+        obsSocket = null;
+    }
+    sendObsStatus();
+}
+
+function obsConnect() {
+    return new Promise((resolve) => {
+        obsDisconnect();
+        const host = String(obsSettings.host || "127.0.0.1").trim() || "127.0.0.1";
+        const port = Math.max(1, Math.min(65535, Number(obsSettings.port) || 4455));
+        obsSettings.host = host;
+        obsSettings.port = port;
+        saveObsSettings();
+
+        let settled = false;
+        const finish = (result) => { if (settled) return; settled = true; resolve(result); };
+        try {
+            const ws = new WebSocket(`ws://${host}:${port}`);
+            obsSocket = ws;
+            ws.once("open", () => {});
+            ws.on("message", (raw) => {
+                let packet;
+                try { packet = JSON.parse(raw.toString()); } catch { return; }
+                if (packet.op === 0) {
+                    const d = packet.d || {};
+                    const identify = { rpcVersion: 1 };
+                    if (d.authentication && obsSettings.password) {
+                        const secret = crypto.createHash("sha256").update(String(obsSettings.password) + d.authentication.salt).digest("base64");
+                        const auth = crypto.createHash("sha256").update(secret + d.authentication.challenge).digest("base64");
+                        identify.authentication = auth;
+                    }
+                    ws.send(JSON.stringify({ op: 1, d: identify }));
+                } else if (packet.op === 2) {
+                    obsConnected = true;
+                    finish({ success: true });
+                    sendObsStatus();
+                } else if (packet.op === 7 && packet.d?.requestType === "GetVersion") {
+                    if (packet.d.requestStatus?.result === true) {
+                        obsConnected = true;
+                        finish({ success: true });
+                    } else {
+                        finish({ success: false, error: packet.d.requestStatus?.comment || "OBS запрос отклонён" });
+                    }
+                } else if (packet.op === 9) {
+                    // Negotiated event batch; no action needed for the basic connection.
+                }
+            });
+            ws.on("error", (error) => { obsConnected = false; sendObsStatus(); finish({ success: false, error: error?.message || "Не удалось подключиться к OBS" }); });
+            ws.on("close", () => { obsConnected = false; if (obsSocket === ws) obsSocket = null; sendObsStatus(); });
+            setTimeout(() => finish({ success: false, error: "Время ожидания OBS истекло" }), 5000);
+        } catch (error) {
+            finish({ success: false, error: error?.message || String(error) });
+        }
+    });
+}
 
 /* =========================
    TOKEN
@@ -753,35 +973,59 @@ function sendGeneralSettings() {
     }
 }
 
-async function checkForUpdates() {
+function sendUpdateCheckResult(result) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send("update-check-result", result);
+}
+
+async function checkForUpdates(force = false) {
     if (!app.isPackaged) {
         console.log("AutoUpdater: development mode, skipped");
-        return;
+        if (force) {
+            sendUpdateCheckResult({
+                status: "unavailable",
+                currentVersion: app.getVersion(),
+                error: "Проверка обновлений доступна только в установленной версии приложения."
+            });
+        }
+        return null;
     }
 
-    if (!generalSettings.checkUpdates) {
+    if (!force && !generalSettings.checkUpdates) {
         console.log("AutoUpdater: проверка отключена в настройках");
-        return;
+        return null;
     }
 
     try {
-        await autoUpdater.checkForUpdates();
+        const result = await autoUpdater.checkForUpdates();
+        if (!result) {
+            sendUpdateCheckResult({
+                status: "unavailable",
+                currentVersion: app.getVersion(),
+                error: "Средство обновления недоступно."
+            });
+            return null;
+        }
+
+        const latestVersion = result.updateInfo?.version || result.versionInfo?.version || app.getVersion();
+        sendUpdateCheckResult({
+            status: result.isUpdateAvailable ? "available" : "up-to-date",
+            currentVersion: app.getVersion(),
+            latestVersion
+        });
+        return result;
     } catch (error) {
         console.error(
             "AutoUpdater: ошибка проверки:",
             error
         );
 
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send(
-                "update-check-result",
-                {
-                    status: "unavailable",
-                    currentVersion: app.getVersion(),
-                    error: error?.message || String(error)
-                }
-            );
-        }
+        sendUpdateCheckResult({
+            status: "unavailable",
+            currentVersion: app.getVersion(),
+            error: error?.message || String(error)
+        });
+        return null;
     }
 }
 
@@ -944,7 +1188,7 @@ function setOverlayInputPassthrough(enabled) {
         if (process.platform === "win32") {
             overlayWindow.setIgnoreMouseEvents(true);
         } else {
-            overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+            overlayWindow.setIgnoreMouseEvents(true);
         }
     } else {
         overlayWindow.setIgnoreMouseEvents(false);
@@ -1519,8 +1763,47 @@ function buildThirdPartyMessageEmotes(text) {
 
 
 /* =========================
-   TWITCH CHAT
+   TWITCH CHAT COLOR
 ========================= */
+
+const twitchColorLookupCache = new Map();
+const twitchColorLookupPending = new Map();
+
+async function getTwitchUsernameColor(userId) {
+    const id = String(userId || "").trim();
+    if (!id || !twitchToken?.accessToken) return null;
+    if (twitchColorLookupCache.has(id)) return twitchColorLookupCache.get(id) || null;
+    if (twitchColorLookupPending.has(id)) return twitchColorLookupPending.get(id);
+
+    const promise = (async () => {
+        try {
+            const response = await fetch(`https://api.twitch.tv/helix/chat/color?user_id=${encodeURIComponent(id)}`, {
+                headers: {
+                    "Client-ID": CLIENT_ID,
+                    Authorization: `Bearer ${twitchToken.accessToken}`
+                }
+            });
+            if (!response.ok) {
+                twitchColorLookupCache.set(id, null);
+                return null;
+            }
+            const data = await response.json();
+            const value = data?.data?.[0]?.color;
+            const color = /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value) : null;
+            twitchColorLookupCache.set(id, color);
+            return color;
+        } catch (error) {
+            console.warn("Не удалось получить цвет пользователя Twitch:", error?.message || error);
+            twitchColorLookupCache.set(id, null);
+            return null;
+        } finally {
+            twitchColorLookupPending.delete(id);
+        }
+    })();
+
+    twitchColorLookupPending.set(id, promise);
+    return promise;
+}
 
 async function connectToTwitchChat(
     channel
@@ -1674,6 +1957,15 @@ async function connectToTwitchChat(
                 tags.username ||
                 "Unknown";
 
+            let twitchChatColor =
+                (typeof tags.color === "string" ? tags.color : null) ||
+                (typeof tags["color"] === "string" ? tags["color"] : null) ||
+                null;
+
+            if (!twitchChatColor && tags["user-id"]) {
+                twitchChatColor = await getTwitchUsernameColor(tags["user-id"]);
+            }
+
             const isBroadcaster =
                 !!(
                     tags.username &&
@@ -1734,8 +2026,8 @@ async function connectToTwitchChat(
                 message:
                     message,
 
-                color:
-                    tags.color ||
+                color: twitchChatColor ||
+                    (typeof tags["userstate"]?.color === "string" ? tags["userstate"].color : null) ||
                     null,
 
                 badges:
@@ -1915,9 +2207,7 @@ ipcMain.on(
     "window-close",
     () => {
 
-        if (mainWindow) {
-            mainWindow.close();
-        }
+        closeApplication();
 
     }
 );
@@ -1975,6 +2265,30 @@ ipcMain.on(
     }
 );
 
+
+ipcMain.handle("twitch-check-channel", async (_event, channel) => {
+    const clean = String(channel || twitchToken?.username || "").trim().replace(/^#/, "").toLowerCase();
+    if (!clean) return { success: false, found: false, error: "Введите название Twitch-канала" };
+    if (!(await validateTwitchToken())) return { success: false, found: false, error: "Сначала войдите в Twitch" };
+    try {
+        const response = await fetch(`https://api.twitch.tv/helix/users?login=${encodeURIComponent(clean)}`, {
+            headers: { "Client-ID": CLIENT_ID, Authorization: `Bearer ${twitchToken.accessToken}` }
+        });
+        if (response.status === 401) {
+            const refreshed = await refreshTwitchToken();
+            if (refreshed) {
+                const retry = await fetch(`https://api.twitch.tv/helix/users?login=${encodeURIComponent(clean)}`, { headers: { "Client-ID": CLIENT_ID, Authorization: `Bearer ${twitchToken.accessToken}` } });
+                if (retry.ok) { const retryData = await retry.json(); const retryUser = Array.isArray(retryData?.data) ? retryData.data[0] : null; return retryUser ? { success: true, found: true, username: retryUser.login, displayName: retryUser.display_name } : { success: true, found: false }; }
+            }
+        }
+        if (!response.ok) return { success: false, found: false, error: `Twitch API вернул ${response.status}` };
+        const data = await response.json();
+        const user = Array.isArray(data?.data) ? data.data[0] : null;
+        return user ? { success: true, found: true, username: user.login, displayName: user.display_name } : { success: true, found: false };
+    } catch (error) {
+        return { success: false, found: false, error: error?.message || String(error) };
+    }
+});
 
 ipcMain.handle(
     "twitch-connect-chat",
@@ -2092,8 +2406,8 @@ ipcMain.on(
 
 ipcMain.on(
     "general-check-updates",
-    () => {
-        checkForUpdates();
+    (event, force) => {
+        checkForUpdates(Boolean(force));
     }
 );
 
@@ -2213,6 +2527,8 @@ ipcMain.on(
         if (!/^#[0-9a-fA-F]{6}$/.test(String(overlaySettings.usernameColor))) {
             overlaySettings.usernameColor = "#ffffff";
         }
+        overlaySettings.useTwitchUsernameColor = overlaySettings.useTwitchUsernameColor !== false;
+        overlaySettings.readableUsernameColors = overlaySettings.readableUsernameColors !== false;
 
         if (!["normal", "bold", "italic", "bold-italic"].includes(overlaySettings.usernameStyle)) {
             overlaySettings.usernameStyle = "bold";
@@ -2769,7 +3085,7 @@ function handleHotkeyAction(action) {
             overlayWindow.setFocusable(true);
             overlayWindow.focus();
         } else {
-            overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+            overlayWindow.setIgnoreMouseEvents(true);
             overlayWindow.setFocusable(false);
         }
 
@@ -2985,6 +3301,18 @@ ipcMain.on("profiles-delete", (event, name) => {
 });
 
 
+ipcMain.handle("obs-get-settings", () => obsSettings);
+ipcMain.on("obs-set-settings", (_event, incoming) => {
+    if (incoming && typeof incoming === "object") obsSettings = { ...obsSettings, ...incoming };
+    obsSettings.host = String(obsSettings.host || "127.0.0.1").trim() || "127.0.0.1";
+    obsSettings.port = Math.max(1, Math.min(65535, Number(obsSettings.port) || 4455));
+    obsSettings.password = String(obsSettings.password || "");
+    saveObsSettings();
+    sendObsStatus();
+});
+ipcMain.handle("obs-connect", () => obsConnect());
+ipcMain.handle("obs-disconnect", () => { obsDisconnect(); return { success: true }; });
+
 /* =========================
    AUTO CHAT STATUS
 ========================= */
@@ -3059,6 +3387,7 @@ app.whenReady().then(
         applyAutoStartSetting();
 
         createWindow();
+        createTray();
         registerHotkeys();
 
         setTimeout(
@@ -3169,35 +3498,15 @@ function createWindow() {
     );
 
 
-    mainWindow.on(
-        "closed",
-        async () => {
-
-            await disconnectFromTwitchChat();
-
-
-            if (
-                overlayWindow &&
-                !overlayWindow.isDestroyed()
-            ) {
-
-                overlayWindow.close();
-
-            }
-
-
-            overlayReady = false;
-            overlayEditing = false;
-            pendingOverlayMessages = [];
-
-            overlayWindow =
-                null;
-
-            mainWindow =
-                null;
-
+    mainWindow.on("close", () => {
+        if (!app.isQuitting) {
+            closeApplication();
         }
-    );
+    });
+
+    mainWindow.on("closed", () => {
+        mainWindow = null;
+    });
 
 }
 
@@ -3206,22 +3515,30 @@ function createWindow() {
    CLOSE ALL WINDOWS
 ========================= */
 
-app.on("will-quit", () => {
-    globalShortcut.unregisterAll();
+app.on("before-quit", () => {
+    app.isQuitting = true;
+    if (autoChatStatusTimer) {
+        clearInterval(autoChatStatusTimer);
+        autoChatStatusTimer = null;
+    }
+    try { globalShortcut.unregisterAll(); } catch {}
+    if (twitchClient) {
+        const client = twitchClient;
+        twitchClient = null;
+        connectedChannel = null;
+        try { client.disconnect().catch(() => {}); } catch {}
+    }
+    obsDisconnect();
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+        try { overlayWindow.destroy(); } catch {}
+    }
+    destroyTray();
 });
 
-app.on(
-    "window-all-closed",
-    () => {
+app.on("will-quit", () => {
+    try { globalShortcut.unregisterAll(); } catch {}
+});
 
-        if (
-            process.platform !==
-            "darwin"
-        ) {
-
-            app.quit();
-
-        }
-
-    }
-);
+app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+});

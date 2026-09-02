@@ -1,1 +1,16 @@
-v17: hotkey assignment fixed. Changed shortcuts are registered independently so an unrelated occupied shortcut cannot block a new one. Windows uses Ctrl instead of CommandOrControl and compares shortcuts case-insensitively.
+Twitch Overlay — проверенная сборка исходников
+
+Исправлено и проверено:
+- Профили: создание, выбор, переименование, удаление, сохранение активного профиля.
+- Горячие клавиши: включая отдельный бинд «Подложка под текст» и полный сброс всех биндов.
+- Общие настройки: корректное сохранение checkbox, новые настройки запоминания Twitch, фильтра сообщений, авто-проверки стрима и подложки.
+- Twitch: получение цвета ника из IRC и резервная проверка через Twitch Get User Chat Color API.
+- Корректное завершение приложения и системный трей с пунктом «Закрыть программу».
+- OBS: рабочее подключение к OBS WebSocket 5.x, сохранение адреса/порта/пароля.
+- Проверка существования Twitch-канала.
+- Существующие настройки Overlay, Twitch-авторизация, профили и автообновление сохранены.
+
+Проверки:
+- node --check main.js/preload.js/overlay-preload.js/overlay.js/server.js
+- npm test
+- node button-audit.js

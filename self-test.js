@@ -30,6 +30,16 @@ for(const field of ["fontSize","opacity","maxMessages","messageDuration","emoteS
 
 check(/loadThirdPartyEmotes\(channel\)/.test(main),"Third-party emote loading is not invoked after chat connection");
 check(/profiles-create/.test(main)&&/profiles-rename/.test(main)&&/profiles-delete/.test(main),"Profile handlers incomplete");
+check(/function createTray\(/.test(main)&&/function closeApplication\(/.test(main),"System tray / close handler missing");
+check(/twitch-check-channel/.test(main)&&/checkTwitchChannel/.test(preload),"Twitch channel check incomplete");
+check(/obs-connect/.test(main)&&/connectObs/.test(preload),"OBS WebSocket controls incomplete");
+check(/id="obsHost"/.test(index)&&/id="obsConnectButton"/.test(index),"OBS UI incomplete");
+check(/toggleMessageBackdrop/.test(main)&&/hotkeyToggleMessageBackdrop/.test(index),"Backdrop hotkey incomplete");
+check(/useTwitchUsernameColor/.test(main)&&/resolveUsernameColor/.test(overlay),"Twitch username color pipeline missing");
+check(/generalRememberTwitchAccount/.test(index)&&/generalMessageFilterEnabled/.test(index)&&/generalAutoChatStatus/.test(index),"General feature controls missing");
+check(/manualCheckUpdatesButton/.test(index)&&/checkForUpdates/.test(preload)&&/general-check-updates/.test(main),"Manual update check control/pipeline missing");
+check(/generalMessageState\(\s*generalAutoStart/.test(index)&&/generalMessageState\(\s*generalCheckUpdates/.test(index),"General checkbox persistence handler missing");
+check(index.indexOf('id="profileModal"') < index.indexOf("<script>"),"Profile modal must exist before renderer script");
 
 if(failed) process.exit(1);
 console.log("PASS: integration/static audit");

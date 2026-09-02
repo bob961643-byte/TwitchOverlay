@@ -19,9 +19,10 @@ getAppVersion: () => ipcRenderer.invoke("app-get-version"),
         );
     },
 
-    checkForUpdates: () => {
+    checkForUpdates: (force = false) => {
         ipcRenderer.send(
-            "general-check-updates"
+            "general-check-updates",
+            Boolean(force)
         );
     },
 
@@ -147,6 +148,8 @@ onOverlaySettings: (callback) => {
         ipcRenderer.send("twitch-logout");
     },
 
+    checkTwitchChannel: (channel) => ipcRenderer.invoke("twitch-check-channel", channel),
+
 
     /* =========================
        TWITCH CHAT
@@ -267,6 +270,15 @@ onOverlaySettings: (callback) => {
         );
 
     },
+
+    /* =========================
+       OBS
+    ========================= */
+    getObsSettings: () => ipcRenderer.invoke("obs-get-settings"),
+    setObsSettings: (settings) => ipcRenderer.send("obs-set-settings", settings),
+    connectObs: () => ipcRenderer.invoke("obs-connect"),
+    disconnectObs: () => ipcRenderer.invoke("obs-disconnect"),
+    onObsStatus: (callback) => ipcRenderer.on("obs-status", (event, status) => callback(status)),
 
     onThirdPartyEmotesLoaded: (callback) => {
         ipcRenderer.on("third-party-emotes-loaded", (event, data) => callback(data));

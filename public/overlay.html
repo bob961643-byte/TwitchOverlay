@@ -990,7 +990,7 @@ const twitchUsernameColorCache = new Map();
 
 function resolveUsernameColor(message) {
     const userKey = String(message?.userId || message?.username || "").toLowerCase();
-    const twitchColor = normalizeHexColor(message?.color);
+    const twitchColor = normalizeHexColor(message?.color || message?.userstate?.color);
     if (twitchColor && userKey) twitchUsernameColorCache.set(userKey, twitchColor);
     let color = twitchColor || (userKey ? twitchUsernameColorCache.get(userKey) : null);
     if (overlaySettings.useTwitchUsernameColor !== false && color) {
