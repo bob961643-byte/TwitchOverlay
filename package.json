@@ -1,12 +1,14 @@
 {
   "name": "twitchoverlay",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Twitch Overlay",
   "main": "main.js",
   "scripts": {
     "test": "node self-test.js",
     "start": "electron .",
-    "build": "electron-builder"
+    "build": "electron-builder",
+    "clean:dist": "powershell -NoProfile -Command \"if (Test-Path dist) { Get-ChildItem dist -Force | Remove-Item -Recurse -Force }\"",
+    "build:clean": "npm run clean:dist && npm run build"
   },
   "keywords": [],
   "author": "",
@@ -40,9 +42,10 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
+      "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "artifactName": "Twitch-Overlay-Setup-${version}.${ext}"
+      "artifactName": "Twitch-Overlay-Setup-${version}.${ext}",
+      "shortcutName": "Twitch Overlay"
     },
     "publish": [
       {

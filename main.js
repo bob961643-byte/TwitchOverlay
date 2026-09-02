@@ -191,75 +191,108 @@ function deleteTwitchToken() {
    TWITCH TOKEN VALIDATION
 ========================= */
 
-async function validateTwitchToken() {
+async function refreshTwitchToken() {
 
-    if (
-        !twitchToken?.accessToken
-    ) {
-
+    if (!twitchToken?.refreshToken) {
         return false;
-
     }
 
     try {
+        const response = await fetch(
+            "https://id.twitch.tv/oauth2/token",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded"
+                },
+                body: new URLSearchParams({
+                    client_id: CLIENT_ID,
+                    grant_type: "refresh_token",
+                    refresh_token: twitchToken.refreshToken
+                })
+            }
+        );
 
-        const response =
-            await fetch(
-                "https://id.twitch.tv/oauth2/validate",
-                {
-                    headers: {
-                        Authorization:
-                            `OAuth ${twitchToken.accessToken}`
-                    }
-                }
+        const data = await response.json();
+
+        if (!response.ok || !data.access_token) {
+            console.error(
+                "Не удалось обновить Twitch token:",
+                data?.message || data?.error || response.status
             );
-
-
-        const data =
-            await response.json();
-
-
-        if (
-            !response.ok
-        ) {
-
             return false;
-
         }
 
+        twitchToken = {
+            ...twitchToken,
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token || twitchToken.refreshToken,
+            expiresIn: Number(data.expires_in) || twitchToken.expiresIn || null,
+            tokenType: data.token_type || twitchToken.tokenType || "bearer"
+        };
+
+        saveTwitchToken(twitchToken);
+        return true;
+    } catch (error) {
+        console.error("Ошибка обновления Twitch token:", error);
+        return false;
+    }
+}
+
+
+async function validateTwitchToken(options = {}) {
+
+    if (!twitchToken?.accessToken) {
+        return false;
+    }
+
+    try {
+        const response = await fetch(
+            "https://id.twitch.tv/oauth2/validate",
+            {
+                headers: {
+                    Authorization: `OAuth ${twitchToken.accessToken}`
+                }
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            if (!options.skipRefresh && twitchToken?.refreshToken) {
+                const refreshed = await refreshTwitchToken();
+                if (refreshed) {
+                    return validateTwitchToken({ skipRefresh: true });
+                }
+            }
+            return false;
+        }
 
         if (data.login) {
-
-            twitchToken.username =
-                data.login;
-
+            twitchToken.username = data.login;
         }
-
 
         if (data.user_id) {
-
-            twitchToken.userId =
-                data.user_id;
-
+            twitchToken.userId = data.user_id;
         }
 
+        if (data.expires_in) {
+            twitchToken.expiresIn = Number(data.expires_in);
+        }
 
-        saveTwitchToken(
-            twitchToken
-        );
-
-
+        saveTwitchToken(twitchToken);
         return true;
-
     } catch (error) {
+        console.error("Ошибка проверки Twitch:", error);
 
-        console.error(
-            "Ошибка проверки Twitch:",
-            error
-        );
+        if (!options.skipRefresh && twitchToken?.refreshToken) {
+            const refreshed = await refreshTwitchToken();
+            if (refreshed) {
+                return validateTwitchToken({ skipRefresh: true });
+            }
+        }
 
         return false;
-
     }
 }
 
@@ -437,7 +470,13 @@ async function pollTwitchToken(
                     data.access_token,
 
                 refreshToken:
-                    data.refresh_token
+                    data.refresh_token,
+
+                expiresIn:
+                    Number(data.expires_in) || null,
+
+                tokenType:
+                    data.token_type || "bearer"
 
             };
 

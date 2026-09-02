@@ -1583,6 +1583,13 @@ document
     .querySelectorAll(".checkbox")
     .forEach((checkbox) => {
 
+        // Общий обработчик намеренно ничего не меняет.
+        // Общие чекбоксы ниже имеют собственный обработчик,
+        // который одновременно меняет UI и сохраняет состояние.
+        if (checkbox.id === "generalAutoStart" || checkbox.id === "generalCheckUpdates") {
+            return;
+        }
+
         checkbox.addEventListener(
             "click",
             () => {
@@ -1677,16 +1684,14 @@ function generalSwitchState(el, fallback) {
 function collectGeneralSettings() {
     return {
         autoStart:
-            generalSwitchState(
-                generalAutoStart,
-                false
-            ),
+            generalAutoStart
+                ? generalAutoStart.classList.contains("checked")
+                : Boolean(generalState.autoStart),
 
         checkUpdates:
-            generalSwitchState(
-                generalCheckUpdates,
-                true
-            ),
+            generalCheckUpdates
+                ? generalCheckUpdates.classList.contains("checked")
+                : Boolean(generalState.checkUpdates),
 
         language:
             generalLanguage?.value ||
@@ -2006,12 +2011,18 @@ function applyGeneralSettings(settings) {
 
         };
 
-    setSwitch(
+    const setCheckbox = (element, value) => {
+        if (element) {
+            element.classList.toggle("checked", Boolean(value));
+        }
+    };
+
+    setCheckbox(
         generalAutoStart,
         generalState.autoStart
     );
 
-    setSwitch(
+    setCheckbox(
         generalCheckUpdates,
         generalState.checkUpdates
     );
@@ -2075,7 +2086,19 @@ function sendGeneralSettings() {
 
 [
     generalAutoStart,
-    generalCheckUpdates,
+    generalCheckUpdates
+]
+    .filter(Boolean)
+    .forEach((element) => {
+        element.addEventListener("click", () => {
+            element.classList.toggle("checked");
+            generalState.autoStart = generalAutoStart?.classList.contains("checked") ?? false;
+            generalState.checkUpdates = generalCheckUpdates?.classList.contains("checked") ?? false;
+            sendGeneralSettings();
+        });
+    });
+
+[
     generalAlwaysOnTop,
     generalShowMessageTime,
     generalHideEmptyMessages,
