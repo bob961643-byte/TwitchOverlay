@@ -89,6 +89,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
         ipcRenderer.send("window-close");
     },
 
+    showSettings: () => {
+        ipcRenderer.send("window-show");
+    },
+
 openOverlay: () => {
     ipcRenderer.send("overlay-open");
 },

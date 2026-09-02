@@ -520,6 +520,7 @@ const overlaySettingsFile =
 const defaultOverlaySettings = {
     fontSize: 20, opacity: 85, maxMessages: 10, messageDuration: 30,
     usernameColor: "#ffffff", usernameStyle: "bold",
+    useTwitchUsernameColor: true, readableUsernameColors: true,
     chatHorizontal: "left", chatVertical: "top",
     messageBackgroundEnabled: false, messageBackgroundOpacity: 70,
     messageBorderRadius: 6, messagePadding: 2, messageGap: 5,
@@ -896,6 +897,21 @@ function saveOverlayBounds() {
 }
 
 
+function setOverlayInputPassthrough(enabled) {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return;
+    if (enabled) {
+        // На Windows полностью пропускаем клики сквозь прозрачный Overlay.
+        // forward:true здесь не нужен и в некоторых случаях мешает окну настроек.
+        if (process.platform === "win32") {
+            overlayWindow.setIgnoreMouseEvents(true);
+        } else {
+            overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+        }
+    } else {
+        overlayWindow.setIgnoreMouseEvents(false);
+    }
+}
+
 function createOverlay() {
 
     if (
@@ -941,6 +957,8 @@ function createOverlay() {
 
     overlayWindow =
         new BrowserWindow({
+
+            title: "Twitch Overlay — Overlay",
 
             x: overlayBounds.x,
             y: overlayBounds.y,
@@ -1020,13 +1038,7 @@ function createOverlay() {
     );
 
 
-    overlayWindow.setIgnoreMouseEvents(
-        true,
-        {
-            forward:
-                true
-        }
-    );
+    setOverlayInputPassthrough(true);
 
 
     overlayWindow.webContents.on(
@@ -1850,6 +1862,17 @@ ipcMain.on(
 
 
 ipcMain.on(
+    "window-show",
+    () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+        mainWindow.moveTop();
+    }
+);
+
+ipcMain.on(
     "window-close",
     () => {
 
@@ -2228,11 +2251,11 @@ ipcMain.on(
                 return;
             }
 
-            overlayWindow.setIgnoreMouseEvents(
-                true,
-                {
-                    forward: true
-                }
+            setOverlayInputPassthrough(true);
+
+            overlayWindow.setAlwaysOnTop(
+                generalSettings.alwaysOnTop,
+                "floating"
             );
 
             overlayWindow.setFocusable(
@@ -2517,7 +2540,8 @@ const appearanceFile = path.join(app.getPath("userData"), "appearance-settings.j
 const defaultHotkeys = {
     toggleOverlay: "CommandOrControl+Shift+O",
     showSettings: "CommandOrControl+Shift+S",
-    editOverlay: "CommandOrControl+Shift+M"
+    editOverlay: "CommandOrControl+Shift+M",
+    toggleMessageBackdrop: "CommandOrControl+Shift+B"
 };
 
 const defaultAppearanceSettings = {
@@ -2527,7 +2551,7 @@ const defaultAppearanceSettings = {
     overlayEditBorder: true
 };
 
-let hotkeySettings = loadJsonFile(hotkeysFile, defaultHotkeys);
+let hotkeySettings = normalizeHotkeySettings(loadJsonFile(hotkeysFile, defaultHotkeys));
 let appearanceSettings = loadJsonFile(appearanceFile, defaultAppearanceSettings);
 let profiles = loadJsonFile(profilesFile, {
     activeProfile: "Основной профиль",
@@ -2561,14 +2585,27 @@ function saveJsonFile(file, data) {
 }
 
 function normalizeAccelerator(value) {
-    return String(value || "").trim();
+    let key = String(value || "").trim();
+    if (process.platform === "win32") {
+        key = key.replace(/CommandOrControl/gi, "Ctrl");
+    }
+    return key;
 }
 
-function registerHotkeys() {
-    globalShortcut.unregisterAll();
-    const requested = { ...defaultHotkeys, ...hotkeySettings };
+function normalizeHotkeySettings(settings) {
+    const result = { ...defaultHotkeys, ...(settings || {}) };
+    for (const action of Object.keys(result)) {
+        result[action] = normalizeAccelerator(result[action]);
+    }
+    return result;
+}
+
+function registerHotkeys(settings = hotkeySettings) {
+    const requested = normalizeHotkeySettings(settings);
     const registered = {};
     const failed = [];
+
+    globalShortcut.unregisterAll();
 
     for (const [action, accelerator] of Object.entries(requested)) {
         const key = normalizeAccelerator(accelerator);
@@ -2578,29 +2615,73 @@ function registerHotkeys() {
             if (!ok) {
                 console.error("Не удалось зарегистрировать горячую клавишу:", action, key);
                 failed.push({ action, key });
-                break;
+                continue;
             }
             registered[action] = key;
         } catch (error) {
             console.error("Ошибка регистрации горячей клавиши:", action, key, error);
-            failed.push({ action, key });
+            failed.push({ action, key, error: String(error?.message || error) });
+        }
+    }
+
+    return { success: failed.length === 0, failed, registered };
+}
+
+function registerChangedHotkeys(previousSettings, requestedSettings) {
+    const previous = normalizeHotkeySettings(previousSettings);
+    const requested = normalizeHotkeySettings(requestedSettings);
+    const changed = Object.keys(requested).filter(
+        action => normalizeAccelerator(previous[action]) !== normalizeAccelerator(requested[action])
+    );
+
+    const registeredNew = [];
+    const failed = [];
+
+    // Only touch the shortcuts that actually changed. Existing working
+    // shortcuts belonging to other actions stay registered.
+    for (const action of changed) {
+        const oldKey = normalizeAccelerator(previous[action]);
+        if (oldKey) {
+            try { globalShortcut.unregister(oldKey); } catch {}
+        }
+    }
+
+    for (const action of changed) {
+        const key = normalizeAccelerator(requested[action]);
+        if (!key) continue;
+        try {
+            const ok = globalShortcut.register(key, () => handleHotkeyAction(action));
+            if (!ok) {
+                failed.push({ action, key });
+                break;
+            }
+            registeredNew.push({ action, key });
+        } catch (error) {
+            failed.push({ action, key, error: String(error?.message || error) });
             break;
         }
     }
 
     if (failed.length) {
-        globalShortcut.unregisterAll();
-        return {
-            success: false,
-            failed: failed[0],
-            registered
-        };
+        for (const item of registeredNew) {
+            try { globalShortcut.unregister(item.key); } catch {}
+        }
+        for (const action of changed) {
+            const oldKey = normalizeAccelerator(previous[action]);
+            if (!oldKey) continue;
+            try {
+                globalShortcut.register(oldKey, () => handleHotkeyAction(action));
+            } catch {}
+        }
+        return { success: false, failed, changed };
     }
 
-    hotkeySettings = { ...requested, ...registered };
+    return { success: true, failed: [], changed };
+}
+
+function persistAndSyncHotkeys() {
     saveJsonFile(hotkeysFile, hotkeySettings);
     mainWindow?.webContents.send("hotkeys-settings", hotkeySettings);
-    return { success: true, registered };
 }
 
 function handleHotkeyAction(action) {
@@ -2656,6 +2737,17 @@ function handleHotkeyAction(action) {
         if (overlayReady) {
             overlayWindow.webContents.send("overlay-edit-mode", overlayEditing);
         }
+        return;
+    }
+
+    if (action === "toggleMessageBackdrop") {
+        overlaySettings.messageBackgroundEnabled = !Boolean(overlaySettings.messageBackgroundEnabled);
+        generalSettings.messageBackdropEnabled = overlaySettings.messageBackgroundEnabled;
+        saveOverlaySettings(overlaySettings);
+        saveGeneralSettings();
+        sendOverlaySettings();
+        sendGeneralSettings();
+        mainWindow?.webContents.send("overlay-backdrop-hotkey-state", overlaySettings.messageBackgroundEnabled);
     }
 }
 
@@ -2695,40 +2787,49 @@ ipcMain.on("hotkeys-start-recording", (event, action) => {
 
 ipcMain.on("hotkeys-cancel-recording", () => {
     registerHotkeys();
+    persistAndSyncHotkeys();
 });
 
 ipcMain.on("hotkeys-set-settings", (event, incoming) => {
     if (!incoming || typeof incoming !== "object") return;
-    const requested = { ...defaultHotkeys, ...incoming };
+
+    const requested = normalizeHotkeySettings(incoming);
     const unique = new Set();
     for (const [action, accelerator] of Object.entries(requested)) {
-        const value = normalizeAccelerator(accelerator);
+        const value = normalizeAccelerator(accelerator).toLowerCase();
         if (value && unique.has(value)) {
-            event.sender.send("hotkeys-save-result", { success: false, error: "Одна комбинация назначена нескольким действиям." });
+            event.sender.send("hotkeys-save-result", {
+                success: false,
+                error: "Одна комбинация назначена нескольким действиям.",
+                settings: hotkeySettings
+            });
+            registerHotkeys();
             return;
         }
         if (value) unique.add(value);
     }
-    const previous = { ...hotkeySettings };
-    hotkeySettings = requested;
-    const registration = registerHotkeys();
-    if (!registration.success) {
-        hotkeySettings = previous;
-        const restored = registerHotkeys();
-        const failedKey = registration.failed?.key || "";
-        const failedAction = registration.failed?.action || "";
-        const message = failedKey
-            ? `Не удалось назначить «${failedKey}» для действия «${failedAction}". Комбинация занята другой программой или недоступна.`
-            : "Не удалось зарегистрировать горячую клавишу.";
-        console.error("Hotkey save failed:", registration.failed, "restored:", restored);
+
+    const previous = normalizeHotkeySettings(hotkeySettings);
+    const result = registerChangedHotkeys(previous, requested);
+
+    if (!result.success) {
+        console.error("Hotkey save failed:", result.failed);
         event.sender.send("hotkeys-save-result", {
             success: false,
-            error: message,
+            error: result.failed?.[0]?.key
+                ? `Не удалось назначить «${result.failed[0].key}». Эта глобальная комбинация сейчас недоступна в Windows.`
+                : "Не удалось зарегистрировать выбранную горячую клавишу.",
             settings: hotkeySettings
         });
         return;
     }
-    event.sender.send("hotkeys-save-result", { success: true, settings: hotkeySettings });
+
+    hotkeySettings = requested;
+    persistAndSyncHotkeys();
+    event.sender.send("hotkeys-save-result", {
+        success: true,
+        settings: hotkeySettings
+    });
 });
 
 ipcMain.handle("appearance-get-settings", () => appearanceSettings);
@@ -2976,6 +3077,8 @@ function createWindow() {
 
     mainWindow =
         new BrowserWindow({
+
+            title: "Twitch Overlay — Настройки",
 
             width: 1280,
 

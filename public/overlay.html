@@ -472,6 +472,8 @@ let overlaySettings = {
     maxMessages: 10,
     messageDuration: 30,
     usernameColor: "#ffffff",
+    useTwitchUsernameColor: true,
+    readableUsernameColors: true,
     usernameStyle: "bold",
     chatHorizontal: "left",
     chatVertical: "top",
@@ -899,6 +901,105 @@ function createBadge(
 }
 
 
+function normalizeHexColor(value) {
+    const color = String(value || "").trim();
+    return /^#[0-9a-fA-F]{6}$/.test(color) ? color : null;
+}
+
+function srgbChannelToLinear(value) {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+function colorLuminance(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return 0.2126 * srgbChannelToLinear(r) + 0.7152 * srgbChannelToLinear(g) + 0.0722 * srgbChannelToLinear(b);
+}
+
+function contrastRatio(foreground, background = "#000000") {
+    const a = colorLuminance(foreground);
+    const b = colorLuminance(background);
+    const light = Math.max(a, b);
+    const dark = Math.min(a, b);
+    return (light + 0.05) / (dark + 0.05);
+}
+
+function hexToHsl(hex) {
+    let r = parseInt(hex.slice(1, 3), 16) / 255;
+    let g = parseInt(hex.slice(3, 5), 16) / 255;
+    let b = parseInt(hex.slice(5, 7), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+            case g: h = (b - r) / d + 2; break;
+            default: h = (r - g) / d + 4;
+        }
+        h /= 6;
+    }
+    return [h, s, l];
+}
+
+function hslToHex(h, s, l) {
+    const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+    };
+    let r, g, b;
+    if (s === 0) r = g = b = l;
+    else {
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1 / 3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1 / 3);
+    }
+    return "#" + [r, g, b].map(v => Math.round(v * 255).toString(16).padStart(2, "0")).join("");
+}
+
+function makeReadableUsernameColor(hex) {
+    const normalized = normalizeHexColor(hex);
+    if (!normalized || contrastRatio(normalized) >= 4.5) return normalized || "#ffffff";
+    const [h, s] = hexToHsl(normalized);
+    let best = normalized;
+    let bestContrast = contrastRatio(normalized);
+    for (let step = 0; step <= 100; step++) {
+        const lightness = step / 100;
+        const candidate = hslToHex(h, s, lightness);
+        const ratio = contrastRatio(candidate);
+        if (ratio > bestContrast) {
+            best = candidate;
+            bestContrast = ratio;
+        }
+        if (ratio >= 4.5) return candidate;
+    }
+    return best;
+}
+
+const twitchUsernameColorCache = new Map();
+
+function resolveUsernameColor(message) {
+    const userKey = String(message?.userId || message?.username || "").toLowerCase();
+    const twitchColor = normalizeHexColor(message?.color);
+    if (twitchColor && userKey) twitchUsernameColorCache.set(userKey, twitchColor);
+    let color = twitchColor || (userKey ? twitchUsernameColorCache.get(userKey) : null);
+    if (overlaySettings.useTwitchUsernameColor !== false && color) {
+        if (overlaySettings.readableUsernameColors !== false) color = makeReadableUsernameColor(color);
+        return color;
+    }
+    return normalizeHexColor(overlaySettings.usernameColor) || "#ffffff";
+}
+
 function addMessage(message) {
 
     if (!message || !chat) {
@@ -988,10 +1089,7 @@ function addMessage(message) {
         message.username ||
         "Unknown";
 
-    username.style.color =
-        overlaySettings.usernameColor ||
-        message.color ||
-        "#ffffff";
+    username.style.color = resolveUsernameColor(message);
 
     messageElement.appendChild(
         username

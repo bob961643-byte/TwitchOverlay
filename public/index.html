@@ -1126,7 +1126,9 @@ body.theme-light .nav-item { color:#4d5360; }
 </div>
 <div class="section">
 <div class="section-title">Имя пользователя</div>
-<div class="setting-row"><div class="setting-label">Цвет имени пользователя</div><input class="color" id="chatUsernameColor" type="color" value="#ffffff"></div>
+<div class="setting-row"><div><div class="setting-label">Цвет имени пользователя по умолчанию</div><div class="setting-description">Используется, если Twitch не передал цвет пользователя</div></div><input class="color" id="chatUsernameColor" type="color" value="#ffffff"></div>
+<div class="setting-row"><div><div class="setting-label">Цвет пользователя из Twitch</div><div class="setting-description">Показывать каждому нику его собственный цвет, выбранный в Twitch</div></div><div class="switch on" id="chatUseTwitchUsernameColor" data-managed="true"></div></div>
+<div class="setting-row"><div><div class="setting-label">Удобные для восприятия цвета</div><div class="setting-description">Автоматически повышать контраст цветов ников на тёмном фоне</div></div><div class="switch on" id="chatReadableUsernameColors" data-managed="true"></div></div>
 <div class="setting-row"><div class="setting-label">Стиль имени пользователя</div><select class="select" id="chatUsernameStyle"><option value="normal">Обычный</option><option value="bold" selected>Жирный</option><option value="italic">Курсив</option><option value="bold-italic">Жирный + курсив</option></select></div>
 </div>
 </section>
@@ -1197,6 +1199,7 @@ body.theme-light .nav-item { color:#4d5360; }
     <div class="setting-row"><div><div class="setting-label">Показать / скрыть оверлей</div><div class="setting-description">Глобальная комбинация работает даже когда приложение не в фокусе</div></div><button class="hotkey hotkey-input" id="hotkeyToggleOverlay" type="button">Ctrl + Shift + O</button></div>
     <div class="setting-row"><div><div class="setting-label">Показать настройки</div><div class="setting-description">Показывает и фокусирует главное окно</div></div><button class="hotkey hotkey-input" id="hotkeyShowSettings" type="button">Ctrl + Shift + S</button></div>
     <div class="setting-row"><div><div class="setting-label">Редактировать оверлей</div><div class="setting-description">Открывает Overlay и переключает режим редактирования</div></div><button class="hotkey hotkey-input" id="hotkeyEditOverlay" type="button">Ctrl + Shift + M</button></div>
+    <div class="setting-row"><div><div class="setting-label">Подложка под яркость</div><div class="setting-description">Включить или выключить тёмный полупрозрачный фон сообщений</div></div><button class="hotkey hotkey-input" id="hotkeyToggleMessageBackdrop" type="button">Ctrl + Shift + B</button></div>
 </div>
 
 <div class="section">
@@ -1394,6 +1397,15 @@ body.theme-light .nav-item { color:#4d5360; }
 
     <div class="section-title">
         Подключение к OBS
+    </div>
+
+    <div class="setting-row">
+
+        <div>
+            <div class="setting-label">Окно Overlay для захвата</div>
+            <div class="setting-description">В OBS выбирайте окно «Twitch Overlay — Overlay», а не «Twitch Overlay — Настройки»</div>
+        </div>
+
     </div>
 
     <div class="setting-row">
@@ -1856,6 +1868,11 @@ const languageTexts = {
         "Фильтр для сообщений": "Nachrichtenfilter",
         "Слова фильтра": "Filterwörter",
         "Авто-проверка статуса чата": "Chatstatus automatisch prüfen",
+        "Подложка под яркость": "Dunkler Nachrichtenhintergrund",
+        "Цвет пользователя из Twitch": "Benutzerfarbe aus Twitch",
+        "Удобные для восприятия цвета": "Lesbare Benutzerfarben",
+        "Цвет имени пользователя по умолчанию": "Standardfarbe des Benutzernamens",
+        "Цвет пользователя из Twitch": "Benutzerfarbe aus Twitch",
         "Подложка под яркость": "Dunkler Nachrichtenhintergrund"
     },
     "Українська": {
@@ -2213,31 +2230,68 @@ window.electronAPI?.onAppearanceSettings?.(applyAppearanceSettings);
 const hotkeyElements = {
     toggleOverlay: document.getElementById("hotkeyToggleOverlay"),
     showSettings: document.getElementById("hotkeyShowSettings"),
-    editOverlay: document.getElementById("hotkeyEditOverlay")
+    editOverlay: document.getElementById("hotkeyEditOverlay"),
+    toggleMessageBackdrop: document.getElementById("hotkeyToggleMessageBackdrop")
 };
-let hotkeyState = { toggleOverlay: "CommandOrControl+Shift+O", showSettings: "CommandOrControl+Shift+S", editOverlay: "CommandOrControl+Shift+M" };
+let hotkeyState = { toggleOverlay: "Ctrl+Shift+O", showSettings: "Ctrl+Shift+S", editOverlay: "Ctrl+Shift+M", toggleMessageBackdrop: "Ctrl+Shift+B" };
 function acceleratorToDisplay(accelerator) {
     return String(accelerator || "").replaceAll("CommandOrControl", "Ctrl").replaceAll("Control", "Ctrl").replaceAll("Alt", "Alt").replaceAll("Shift", "Shift").replaceAll("Plus", "+").split("+").map(p => p === "SPACE" ? "Space" : p.length === 1 ? p.toUpperCase() : p).join(" + ");
 }
 function eventToAccelerator(event) {
     const parts = [];
-    if (event.ctrlKey || event.metaKey) parts.push("CommandOrControl");
+    if (event.ctrlKey || event.metaKey) parts.push("Ctrl");
     if (event.altKey) parts.push("Alt");
     if (event.shiftKey) parts.push("Shift");
-    const ignored = ["Control","Shift","Alt","Meta","OS","CapsLock","NumLock","ScrollLock","Fn"];
-    let key = event.key;
-    if (ignored.includes(key)) return null;
-    if (key === " ") key = "Space";
-    else if (key.startsWith("F") && /^F([1-9]|1[0-9]|2[0-4])$/.test(key)) {}
-    else if (key.startsWith("Arrow")) key = key.replace("Arrow", "");
-    else if (key === "Escape") key = "Esc";
-    else if (key === "Enter") key = "Enter";
-    else if (key === "Backspace") key = "Backspace";
-    else if (key === "Delete") key = "Delete";
-    else if (key === "Tab") key = "Tab";
-    else if (key.length === 1) key = key.toUpperCase();
-    else if (!/^[A-Za-z0-9]+$/.test(key)) return null;
-    if (!parts.length) return null;
+
+    // Use event.code for the main key so the selected Windows keyboard layout
+    // does not change the shortcut. For example, Shift+Е on a Russian layout
+    // is still the physical KeyE and becomes Shift+E. Electron accelerators
+    // use A-Z/0-9 key codes, not localized characters.
+    const code = String(event.code || "");
+    const codeMap = {
+        Space: "Space",
+        Enter: "Enter",
+        NumpadEnter: "Enter",
+        Backspace: "Backspace",
+        Delete: "Delete",
+        Insert: "Insert",
+        Tab: "Tab",
+        Escape: "Esc",
+        ArrowUp: "Up",
+        ArrowDown: "Down",
+        ArrowLeft: "Left",
+        ArrowRight: "Right",
+        Home: "Home",
+        End: "End",
+        PageUp: "PageUp",
+        PageDown: "PageDown",
+        CapsLock: "Capslock",
+        NumLock: "Numlock",
+        ScrollLock: "Scrolllock"
+    };
+
+    let key = codeMap[code] || "";
+    if (!key && /^Key[A-Z]$/.test(code)) key = code.slice(3);
+    if (!key && /^Digit[0-9]$/.test(code)) key = code.slice(5);
+    if (!key && /^Numpad[0-9]$/.test(code)) key = code.slice(6);
+    if (!key && /^F([1-9]|1[0-9]|2[0-4])$/.test(code)) key = code;
+
+    // Fallback for punctuation and unusual keys when event.code is unavailable.
+    if (!key) {
+        const ignored = ["Control","Shift","Alt","Meta","OS","CapsLock","NumLock","ScrollLock","Fn"];
+        let raw = event.key;
+        if (ignored.includes(raw)) return null;
+        if (raw === " ") key = "Space";
+        else if (raw === "Escape") key = "Esc";
+        else if (raw === "Enter") key = "Enter";
+        else if (raw === "Backspace") key = "Backspace";
+        else if (raw === "Delete") key = "Delete";
+        else if (raw === "Tab") key = "Tab";
+        else if (raw.length === 1 && /[A-Za-z0-9]/.test(raw)) key = raw.toUpperCase();
+        else if (/^[A-Za-z0-9]+$/.test(raw)) key = raw;
+    }
+
+    if (!parts.length || !key) return null;
     parts.push(key);
     return parts.join("+");
 }
@@ -2253,7 +2307,8 @@ Object.entries(hotkeyElements).forEach(([action, el]) => {
         }
         const accelerator = eventToAccelerator(event);
         if (!accelerator) return;
-        const duplicate = Object.entries(hotkeyState).some(([a, v]) => a !== action && v === accelerator);
+        const normalizeCaptured = (value) => String(value || "").replaceAll("CommandOrControl", "Ctrl").toLowerCase();
+        const duplicate = Object.entries(hotkeyState).some(([a, v]) => a !== action && normalizeCaptured(v) === normalizeCaptured(accelerator));
         if (duplicate) {
             applyHotkeys(hotkeyState);
             el.classList.remove("recording");
@@ -2284,25 +2339,18 @@ window.addEventListener("blur", () => {
 });
 window.electronAPI?.getHotkeys?.().then(applyHotkeys).catch(console.error);
 window.electronAPI?.onHotkeys?.(applyHotkeys);
-window.electronAPI?.onHotkeysSaveResult?.(result => { if (!result.success) {
+window.electronAPI?.onHotkeysSaveResult?.(result => {
+    if (!result.success) {
         window.showToast(result.error || "Не удалось сохранить горячую клавишу");
-        // Возвращаем фактически зарегистрированные комбинации.
-        window.addEventListener("blur", () => {
-    const recording = Object.values(hotkeyElements).some((el) => el?.classList.contains("recording"));
-    if (recording) {
         Object.values(hotkeyElements).forEach((el) => el?.classList.remove("recording"));
-        window.electronAPI?.cancelHotkeyRecording?.();
-        window.electronAPI?.getHotkeys?.().then(applyHotkeys).catch(console.error);
-    }
-});
-window.electronAPI?.getHotkeys?.().then(applyHotkeys).catch(console.error);
-        Object.values(hotkeyElements).forEach((el) => el?.classList.remove("recording"));
-    } else {
         applyHotkeys(result.settings || hotkeyState);
-        window.showToast("Горячая клавиша сохранена");
+        return;
     }
+    Object.values(hotkeyElements).forEach((el) => el?.classList.remove("recording"));
+    applyHotkeys(result.settings || hotkeyState);
+    window.showToast("Горячая клавиша сохранена");
 });
-document.getElementById("resetHotkeysButton")?.addEventListener("click", () => { hotkeyState = { toggleOverlay: "CommandOrControl+Shift+O", showSettings: "CommandOrControl+Shift+S", editOverlay: "CommandOrControl+Shift+M" }; applyHotkeys(hotkeyState); window.electronAPI?.setHotkeys?.(hotkeyState); });
+document.getElementById("resetHotkeysButton")?.addEventListener("click", () => { hotkeyState = { toggleOverlay: "Ctrl+Shift+O", showSettings: "Ctrl+Shift+S", editOverlay: "Ctrl+Shift+M", toggleMessageBackdrop: "Ctrl+Shift+B" }; applyHotkeys(hotkeyState); window.electronAPI?.setHotkeys?.(hotkeyState); });
 
 
 /* =========================
@@ -2541,9 +2589,9 @@ connectChatButton?.addEventListener(
 
     }
 );
-launchOverlayButton?.addEventListener("click", () => window.electronAPI?.openOverlay?.());
-editOverlayButton?.addEventListener("click", () => window.electronAPI?.editOverlay?.());
-closeOverlayButton?.addEventListener("click", () => window.electronAPI?.closeOverlay?.());
+launchOverlayButton?.addEventListener("click", () => { window.electronAPI?.showSettings?.(); window.electronAPI?.openOverlay?.(); });
+editOverlayButton?.addEventListener("click", () => { window.electronAPI?.showSettings?.(); window.electronAPI?.editOverlay?.(); });
+closeOverlayButton?.addEventListener("click", () => { window.electronAPI?.showSettings?.(); window.electronAPI?.closeOverlay?.(); });
 twitchTest?.addEventListener("click", async () => { const s = await window.electronAPI?.getTwitchSessionStatus?.(); if (!s?.connected) window.showToast("Сначала войдите в Twitch"); else window.showToast(`Аккаунт Twitch: ${s.username || "подключён"}`); });
 window.electronAPI?.onTwitchLoginStarted?.(data => { if (data?.userCode) window.showToast(`Код Twitch: ${data.userCode}`); });
 window.electronAPI?.onTwitchLoginSuccess?.(() => { window.showToast("Twitch подключён"); refreshTwitchStatus(); });
@@ -2588,6 +2636,8 @@ const chatFontSize = document.getElementById("chatFontSize");
 const chatMaxMessages = document.getElementById("chatMaxMessages");
 const chatMessageDuration = document.getElementById("chatMessageDuration");
 const chatUsernameColor = document.getElementById("chatUsernameColor");
+const chatUseTwitchUsernameColor = document.getElementById("chatUseTwitchUsernameColor");
+const chatReadableUsernameColors = document.getElementById("chatReadableUsernameColors");
 const chatUsernameStyle = document.getElementById("chatUsernameStyle");
 const chatHorizontal = document.getElementById("chatHorizontal");
 const chatVertical = document.getElementById("chatVertical");
@@ -2614,7 +2664,7 @@ fontSize:Number(chatFontSize?.value)||20,
 opacity: Number.isFinite(Number(opacitySlider?.value)) ? Number(opacitySlider.value) : 85,
 maxMessages:Number(chatMaxMessages?.value)||10,
 messageDuration:Number(chatMessageDuration?.value)||30,
-usernameColor:chatUsernameColor?.value||"#ffffff", usernameStyle:chatUsernameStyle?.value||"bold",
+usernameColor:chatUsernameColor?.value||"#ffffff", useTwitchUsernameColor:switchState(chatUseTwitchUsernameColor,true), readableUsernameColors:switchState(chatReadableUsernameColors,true), usernameStyle:chatUsernameStyle?.value||"bold",
 chatHorizontal:chatHorizontal?.value||"left", chatVertical:chatVertical?.value||"top",
 messageBackgroundEnabled:switchState(messageBackgroundEnabled,false), messageBackgroundOpacity:Number(messageBackgroundOpacity?.value)||70,
 messageBorderRadius:Number(messageBorderRadius?.value)||6, messagePadding:Number(messagePadding?.value)||2, messageGap:Number(messageGap?.value)||5,
@@ -2634,13 +2684,13 @@ if(messageExitType)messageExitType.value=["fade","left","right","top","bottom","
 setN(messageBackgroundOpacity,settings.messageBackgroundOpacity,0,100,70);setN(messageBorderRadius,settings.messageBorderRadius,0,50,6);setN(messagePadding,settings.messagePadding,0,50,2);setN(messageGap,settings.messageGap,0,50,5);
 setN(emoteSize,settings.emoteSize,16,100,30);setN(badgeSize,settings.badgeSize,12,60,20);setN(emoteSpacing,settings.emoteSpacing,0,20,2);
 if(opacityValue&&opacitySlider){opacityValue.textContent=opacitySlider.value+"%";opacitySlider.style.setProperty("--value",opacitySlider.value+"%");}
-if(chatUsernameColor)chatUsernameColor.value=settings.usernameColor||"#ffffff";if(chatUsernameStyle)chatUsernameStyle.value=settings.usernameStyle||"bold";if(chatHorizontal)chatHorizontal.value=settings.chatHorizontal||"left";if(chatVertical)chatVertical.value=settings.chatVertical||"top";
+if(chatUsernameColor)chatUsernameColor.value=settings.usernameColor||"#ffffff";if(chatUseTwitchUsernameColor)chatUseTwitchUsernameColor.classList.toggle("on",settings.useTwitchUsernameColor!==false);if(chatReadableUsernameColors)chatReadableUsernameColors.classList.toggle("on",settings.readableUsernameColors!==false);if(chatUsernameStyle)chatUsernameStyle.value=settings.usernameStyle||"bold";if(chatHorizontal)chatHorizontal.value=settings.chatHorizontal||"left";if(chatVertical)chatVertical.value=settings.chatVertical||"top";
 [[messageBackgroundEnabled,settings.messageBackgroundEnabled],[textShadowEnabled,settings.textShadowEnabled!==false],[showTwitchEmotes,settings.showTwitchEmotes!==false],[showBadges,settings.showBadges!==false]].forEach(([e,v])=>{if(e)e.classList.toggle("on",Boolean(v));});
 [[emotesTwitchEnabled,settings.showTwitchEmotes!==false],[emotesBttvEnabled,settings.showBttvEmotes!==false],[emotes7tvEnabled,settings.show7tvEmotes!==false],[emotesAnimatedEnabled,settings.animatedEmotes!==false],[emotesUnicodeEnabled,settings.showUnicodeEmotes!==false]].forEach(([e,v])=>{if(e)e.classList.toggle("on",Boolean(v));});
 if(emotesSize)emotesSize.value=String(settings.emoteSize||30); }
 function sendOverlaySettings(){ if(window.electronAPI?.setOverlaySettings) window.electronAPI.setOverlaySettings(collectOverlaySettings()); }
 [opacitySlider,chatFontSize,chatMaxMessages,chatMessageDuration,chatUsernameColor,chatUsernameStyle,chatHorizontal,chatVertical,messageBackgroundOpacity,messageBorderRadius,messagePadding,messageGap,emoteSize,badgeSize,emoteSpacing,messageEnterType,messageEnterDuration,messageExitType,messageExitDuration].filter(Boolean).forEach(e=>{e.addEventListener("input",()=>{if(e===opacitySlider&&opacityValue){opacityValue.textContent=e.value+"%";e.style.setProperty("--value",e.value+"%");}sendOverlaySettings();});e.addEventListener("change",sendOverlaySettings);});
-[messageBackgroundEnabled,textShadowEnabled,showTwitchEmotes,showBadges,messageEnterEnabled,messageExitEnabled].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendOverlaySettings();}));
+[messageBackgroundEnabled,textShadowEnabled,showTwitchEmotes,showBadges,messageEnterEnabled,messageExitEnabled,chatUseTwitchUsernameColor,chatReadableUsernameColors].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendOverlaySettings();}));
 if(window.electronAPI?.getOverlaySettings)window.electronAPI.getOverlaySettings().then(applySettingsToPanel).catch(e=>console.error("Ошибка загрузки настроек Overlay:",e));
 if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(applySettingsToPanel);
 </script>
