@@ -9,7 +9,7 @@
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>Twitch Overlay</title>
+    <title>Twitch Overlay — OBS</title>
 
     <style>
 
@@ -44,7 +44,7 @@
             width: 100%;
             height: 100%;
             box-sizing: border-box;
-            padding: 30px;
+            padding: 0;
             display: flex;
             flex-direction: column;
             justify-content: flex-start;
@@ -206,13 +206,7 @@
 
     
        body.overlay-editing {
-    pointer-events: auto;
-
-    cursor: move;
-
-    box-shadow:
-        inset 0 0 0 2px
-        rgba(255, 255, 255, 0.55);
+    pointer-events: none;
 }
 
         body.overlay-editing #chat {
@@ -387,7 +381,8 @@ body.overlay-editing .resize-handle {
     <div class="resize-handle resize-nw" data-resize="nw"></div>
     <div class="resize-handle resize-se" data-resize="se"></div>
     <div class="resize-handle resize-sw" data-resize="sw"></div>
-    <script>
+    <script src="/socket.io/socket.io.js"></script>
+<script>
 
 const chat =
     document.getElementById("chat");
@@ -507,206 +502,9 @@ function applyOverlaySettings(settings) {
 }
 
 
-if (
-    window.overlayAPI &&
-    typeof window.overlayAPI.onSettings ===
-    "function"
-) {
-
-    window.overlayAPI.onSettings(
-        applyOverlaySettings
-    );
-
-}
-
-
-if (
-    window.overlayAPI &&
-    typeof window.overlayAPI.onMessage ===
-    "function"
-) {
-
-    window.overlayAPI.onMessage(
-        (message) => {
-
-            addMessage(message);
-
-        }
-    );
-
-}
-
-
-if (
-    window.overlayAPI &&
-    typeof window.overlayAPI.onEditMode ===
-    "function"
-) {
-/* =========================
-   РАЗМЕР ТЕКСТА ЧАТА
-========================= */
-
-if (
-    window.overlayAPI &&
-    typeof window.overlayAPI.onChatFontSize ===
-    "function"
-) {
-
-    window.overlayAPI.onChatFontSize(
-        (size) => {
-
-            const fontSize =
-                Math.max(
-                    10,
-                    Math.min(
-                        100,
-                        Number(size) || 20
-                    )
-                );
-
-            document.documentElement.style.setProperty(
-                "--chat-font-size",
-                `${fontSize}px`
-            );
-
-        }
-    );
-
-}
-    window.overlayAPI.onEditMode(
-        (enabled) => {
-
-            overlayEditing =
-                Boolean(enabled);
-
-
-            if (overlayEditing) {
-
-                document.body.classList.add(
-                    "overlay-editing"
-                );
-
-            } else {
-
-                document.body.classList.remove(
-                    "overlay-editing"
-                );
-
-                isDragging =
-                    false;
-
-                isResizing =
-                    false;
-
-            }
-
-        }
-    );
-
-}
-
-
-/* =========================
-   ПЕРЕМЕЩЕНИЕ И РАЗМЕР OVERLAY
-========================= */
-
-document.addEventListener(
-    "mousedown",
-    (event) => {
-
-        if (
-            !overlayEditing ||
-            event.button !== 0
-        ) {
-            return;
-        }
-
-        const handle =
-            event.target.closest(
-                ".resize-handle"
-            );
-
-        if (handle) {
-            isResizing = true;
-            isDragging = false;
-            resizeDirection =
-                handle.dataset.resize || "";
-        } else {
-            isDragging = true;
-            isResizing = false;
-            resizeDirection = "";
-        }
-
-        dragStartX = event.screenX;
-        dragStartY = event.screenY;
-
-        event.preventDefault();
-    }
-);
-
-document.addEventListener(
-    "mousemove",
-    (event) => {
-
-        if (!overlayEditing) {
-            return;
-        }
-
-        const deltaX =
-            event.screenX - dragStartX;
-        const deltaY =
-            event.screenY - dragStartY;
-
-        if (deltaX === 0 && deltaY === 0) {
-            return;
-        }
-
-        if (isResizing) {
-            window.overlayAPI?.resize?.(
-                resizeDirection,
-                deltaX,
-                deltaY
-            );
-        } else if (isDragging) {
-            window.overlayAPI?.move?.(
-                deltaX,
-                deltaY
-            );
-        }
-
-        dragStartX = event.screenX;
-        dragStartY = event.screenY;
-    }
-);
-
-function stopPointerAction() {
-    isDragging = false;
-    isResizing = false;
-    resizeDirection = "";
-}
-
-document.addEventListener(
-    "mouseup",
-    stopPointerAction
-);
-
-document.addEventListener(
-    "mouseleave",
-    stopPointerAction
-);
-
-document.addEventListener(
-    "keydown",
-    (event) => {
-        if (
-            event.key === "Escape" &&
-            overlayEditing
-        ) {
-            window.overlayAPI?.stopEditMode?.();
-        }
-    }
-);
-
+const obsSocket = io();
+obsSocket.on("overlay-settings", applyOverlaySettings);
+obsSocket.on("twitch-chat-message", (message) => addMessage(message));
 
 function createBadge(
     name,

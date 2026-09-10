@@ -26,6 +26,10 @@ getAppVersion: () => ipcRenderer.invoke("app-get-version"),
         );
     },
 
+    downloadUpdate: () => {
+        ipcRenderer.send("general-download-update");
+    },
+
     onGeneralSettings: (callback) => {
         ipcRenderer.on(
             "general-settings",

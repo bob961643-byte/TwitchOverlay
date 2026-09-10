@@ -598,14 +598,18 @@ body.theme-light .nav-item { color:#4d5360; }
     background: #2b303c;
 }
 
-
-.profile-modal[hidden] { display:none; }
-.profile-modal { position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; }
-.profile-modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.58); }
-.profile-modal-card { position:relative; z-index:1; pointer-events:auto; width:min(420px, calc(100vw - 40px)); padding:20px; border:1px solid #343945; border-radius:10px; background:var(--panel); box-shadow:0 18px 60px rgba(0,0,0,.45); }
-.profile-modal-title { font-size:17px; font-weight:700; margin-bottom:7px; }
-.profile-modal-description { font-size:12px; color:var(--muted); margin-bottom:12px; }
-.profile-modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+const obsBrowserSourceUrl = document.getElementById("obsBrowserSourceUrl");
+const copyObsBrowserSourceUrl = document.getElementById("copyObsBrowserSourceUrl");
+copyObsBrowserSourceUrl?.addEventListener("click", async () => {
+    const url = obsBrowserSourceUrl?.value || "http://127.0.0.1:3000/obs.html";
+    try {
+        await navigator.clipboard.writeText(url);
+    } catch {
+        obsBrowserSourceUrl?.select?.();
+        document.execCommand("copy");
+    }
+    window.showToast?.("Адрес OBS скопирован");
+});
 
 /* =========================
    ABOUT
@@ -907,14 +911,6 @@ body.theme-light .nav-item { color:#4d5360; }
     </div>
 
     <div class="setting-row">
-        <div>
-            <div class="setting-label">Проверить обновление</div>
-            <div class="setting-description">Проверить наличие новой версии прямо сейчас</div>
-        </div>
-        <button class="small-button" id="manualCheckUpdatesButton" type="button">Проверить обновление</button>
-    </div>
-
-    <div class="setting-row">
         <div class="setting-label">Язык интерфейса</div>
 
         <select class="select" id="generalLanguage">
@@ -971,37 +967,6 @@ body.theme-light .nav-item { color:#4d5360; }
             <option value="5">5 сек.</option>
             <option value="10">10 сек.</option>
         </select>
-    </div>
-
-</div>
-
-
-<div class="section">
-    <div class="section-title">Чат и сохранение</div>
-
-    <div class="setting-row">
-        <div><div class="setting-label">Запоминать Twitch-аккаунт</div><div class="setting-description">Сохранять авторизацию между запусками</div></div>
-        <div class="switch on" id="generalRememberTwitchAccount"></div>
-    </div>
-
-    <div class="setting-row">
-        <div><div class="setting-label">Фильтр сообщений</div><div class="setting-description">Не показывать сообщения, содержащие указанные слова</div></div>
-        <div class="switch" id="generalMessageFilterEnabled"></div>
-    </div>
-
-    <div class="setting-row">
-        <div><div class="setting-label">Слова фильтра</div><div class="setting-description">Можно разделять пробелами, запятыми или точками с запятой</div></div>
-        <input class="input" id="generalMessageFilterWords" type="text" placeholder="слово1, слово2">
-    </div>
-
-    <div class="setting-row">
-        <div><div class="setting-label">Авто-проверка статуса чата</div><div class="setting-description">Автоматически открывать Overlay при начале стрима</div></div>
-        <div class="switch" id="generalAutoChatStatus"></div>
-    </div>
-
-    <div class="setting-row">
-        <div><div class="setting-label">Подложка под текст</div><div class="setting-description">Показывать тёмную подложку за сообщениями</div></div>
-        <div class="switch" id="generalMessageBackdropEnabled"></div>
     </div>
 
 </div>
@@ -1393,16 +1358,74 @@ body.theme-light .nav-item { color:#4d5360; }
 ========================= -->
 
 <section class="page" id="page-obs">
+
 <h1 class="page-title">OBS</h1>
+
 <div class="section">
-    <div class="section-title">Подключение к OBS</div>
-    <div class="setting-row"><div><div class="setting-label">WebSocket</div><div class="setting-description">Подключение к OBS WebSocket 5.x</div></div><div class="status" id="obsStatus"><span class="status-dot"></span>Не подключено</div></div>
-    <div class="setting-row"><div class="setting-label">Адрес</div><input class="input" id="obsHost" type="text" value="127.0.0.1"></div>
-    <div class="setting-row"><div class="setting-label">Порт</div><input class="input" id="obsPort" type="number" min="1" max="65535" value="4455"></div>
-    <div class="setting-row"><div class="setting-label">Пароль</div><input class="input" id="obsPassword" type="password" placeholder="Необязательно"></div>
-    <div class="setting-row"><div class="setting-label">Управление</div><div style="display:flex;gap:8px;"><button class="small-button" id="obsConnectButton">Подключить</button><button class="small-button" id="obsDisconnectButton">Отключить</button></div></div>
+    <div class="section-title">Чистый чат для OBS</div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">Browser Source</div>
+            <div class="setting-description">Добавь этот адрес в OBS как «Источник браузера». Здесь будет только чат с прозрачным фоном — без игры и рабочего стола под ним.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input class="input" id="obsBrowserSourceUrl" type="text" readonly value="http://127.0.0.1:3000/obs.html" style="min-width:340px;">
+            <button class="small-button" id="copyObsBrowserSourceUrl">Копировать</button>
+        </div>
+    </div>
 </div>
+
+<div class="section">
+
+    <div class="section-title">
+        Подключение к OBS
+    </div>
+
+    <div class="setting-row">
+
+        <div class="setting-label">
+            WebSocket
+        </div>
+
+        <div class="status">
+            <span class="status-dot"></span>
+            Не подключено
+        </div>
+
+    </div>
+
+    <div class="setting-row">
+
+        <div class="setting-label">
+            Адрес
+        </div>
+
+        <input
+            class="input"
+            type="text"
+            value="127.0.0.1"
+        >
+
+    </div>
+
+    <div class="setting-row">
+
+        <div class="setting-label">
+            Порт
+        </div>
+
+        <input
+            class="input"
+            type="number"
+            value="4455"
+        >
+
+    </div>
+
+</div>
+
 </section>
+
 
 <!-- =========================
      ABOUT
@@ -1442,19 +1465,6 @@ body.theme-light .nav-item { color:#4d5360; }
 
 <div class="toast" id="toast">
     Настройки сохранены
-</div>
-
-<div class="profile-modal" id="profileModal" hidden>
-    <div class="profile-modal-backdrop" data-profile-modal-close></div>
-    <div class="profile-modal-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
-        <div class="profile-modal-title" id="profileModalTitle">Профиль</div>
-        <div class="profile-modal-description" id="profileModalDescription">Введите название профиля</div>
-        <input class="input" id="profileModalInput" type="text" maxlength="40" autocomplete="off">
-        <div class="profile-modal-actions">
-            <button class="small-button" id="profileModalCancel" type="button">Отмена</button>
-            <button class="small-button" id="profileModalConfirm" type="button">Подтвердить</button>
-        </div>
-    </div>
 </div>
 
 <script>
@@ -1516,14 +1526,43 @@ navItems.forEach((item) => {
    SWITCHES
 ========================= */
 
-// All switches are controlled by their dedicated handlers below.
+document
+    .querySelectorAll(".switch")
+    .forEach((switchElement) => {
+
+        if (
+            switchElement.dataset.managed === "true" ||
+            (switchElement.id && switchElement.id.startsWith("general"))
+        ) {
+            return;
+        }
+
+        switchElement.addEventListener(
+            "click",
+            () => {
+                switchElement.classList.toggle("on");
+            }
+        );
+
+    });
 
 
 /* =========================
    CHECKBOXES
 ========================= */
 
+document
+    .querySelectorAll(".checkbox")
+    .forEach((checkbox) => {
 
+        checkbox.addEventListener(
+            "click",
+            () => {
+                checkbox.classList.toggle("checked");
+            }
+        );
+
+    });
 
 
 
@@ -1579,11 +1618,6 @@ const generalAutoBackgroundTheme =
 
 const generalBackgroundInterval =
     document.getElementById("generalBackgroundInterval");
-const generalRememberTwitchAccount = document.getElementById("generalRememberTwitchAccount");
-const generalMessageFilterEnabled = document.getElementById("generalMessageFilterEnabled");
-const generalMessageFilterWords = document.getElementById("generalMessageFilterWords");
-const generalAutoChatStatus = document.getElementById("generalAutoChatStatus");
-const generalMessageBackdropEnabled = document.getElementById("generalMessageBackdropEnabled");
 
 let generalState = {
     autoStart: false,
@@ -1593,12 +1627,7 @@ let generalState = {
     showMessageTime: true,
     hideEmptyMessages: false,
     autoBackgroundTheme: true,
-    backgroundCheckInterval: 1,
-    rememberTwitchAccount: true,
-    messageFilterEnabled: false,
-    messageFilterWords: "",
-    autoChatStatus: false,
-    messageBackdropEnabled: false
+    backgroundCheckInterval: 1
 };
 
 function generalSwitchState(el, fallback) {
@@ -1607,22 +1636,16 @@ function generalSwitchState(el, fallback) {
         : fallback;
 }
 
-function generalMessageState(el, fallback) {
-    if (!el) return fallback;
-    if (el.classList.contains("checkbox")) return el.classList.contains("checked");
-    return el.classList.contains("on");
-}
-
 function collectGeneralSettings() {
     return {
         autoStart:
-            generalMessageState(
+            generalSwitchState(
                 generalAutoStart,
                 false
             ),
 
         checkUpdates:
-            generalMessageState(
+            generalSwitchState(
                 generalCheckUpdates,
                 true
             ),
@@ -1658,12 +1681,7 @@ function collectGeneralSettings() {
         backgroundCheckInterval:
             Number(
                 generalBackgroundInterval?.value
-            ) || 1,
-        rememberTwitchAccount: generalMessageState(generalRememberTwitchAccount, true),
-        messageFilterEnabled: generalMessageState(generalMessageFilterEnabled, false),
-        messageFilterWords: String(generalMessageFilterWords?.value || ""),
-        autoChatStatus: generalMessageState(generalAutoChatStatus, false),
-        messageBackdropEnabled: generalMessageState(generalMessageBackdropEnabled, false)
+            ) || 1
     };
 }
 
@@ -1924,8 +1942,15 @@ function applyGeneralSettings(settings) {
 
         };
 
-    if (generalAutoStart) generalAutoStart.classList.toggle("checked", Boolean(generalState.autoStart));
-    if (generalCheckUpdates) generalCheckUpdates.classList.toggle("checked", Boolean(generalState.checkUpdates));
+    setSwitch(
+        generalAutoStart,
+        generalState.autoStart
+    );
+
+    setSwitch(
+        generalCheckUpdates,
+        generalState.checkUpdates
+    );
 
     setSwitch(
         generalAlwaysOnTop,
@@ -1953,15 +1978,11 @@ function applyGeneralSettings(settings) {
     }
 
     if (generalBackgroundInterval) {
-        generalBackgroundInterval.value = String(generalState.backgroundCheckInterval || 1);
+        generalBackgroundInterval.value =
+            String(
+                generalState.backgroundCheckInterval || 1
+            );
     }
-    [
-        [generalRememberTwitchAccount, generalState.rememberTwitchAccount !== false],
-        [generalMessageFilterEnabled, Boolean(generalState.messageFilterEnabled)],
-        [generalAutoChatStatus, Boolean(generalState.autoChatStatus)],
-        [generalMessageBackdropEnabled, Boolean(generalState.messageBackdropEnabled)]
-    ].forEach(([el, value]) => el?.classList.toggle("on", value));
-    if (generalMessageFilterWords) generalMessageFilterWords.value = String(generalState.messageFilterWords || "");
 
     applyInterfaceLanguage(
         generalState.language
@@ -1982,40 +2003,41 @@ function sendGeneralSettings() {
 
 }
 
-[generalAutoStart, generalCheckUpdates].filter(Boolean).forEach((element) => {
-    element.addEventListener("click", () => {
-        element.classList.toggle("checked");
-        sendGeneralSettings();
-    });
-});
-
 [
+    generalAutoStart,
+    generalCheckUpdates,
     generalAlwaysOnTop,
     generalShowMessageTime,
     generalHideEmptyMessages,
     generalAutoBackgroundTheme
-].filter(Boolean).forEach((element) => {
-    element.addEventListener("click", () => {
-        element.classList.toggle("on");
-        sendGeneralSettings();
-        if (element === generalAutoBackgroundTheme) {
-            generalState.autoBackgroundTheme = element.classList.contains("on");
-            restartBackgroundThemeCheck();
-        }
-    });
-});
+]
+    .filter(Boolean)
+    .forEach((element) => {
 
-[generalRememberTwitchAccount, generalMessageFilterEnabled, generalAutoChatStatus, generalMessageBackdropEnabled].filter(Boolean).forEach((element) => {
-    element.addEventListener("click", () => {
-        element.classList.toggle("on");
-        if (element === generalMessageBackdropEnabled) {
-            generalState.messageBackdropEnabled = element.classList.contains("on");
-        }
-        sendGeneralSettings();
-    });
-});
+        element.addEventListener(
+            "click",
+            () => {
 
-generalMessageFilterWords?.addEventListener("input", sendGeneralSettings);
+                element.classList.toggle(
+                    "on"
+                );
+
+                sendGeneralSettings();
+
+                if (
+                    element ===
+                    generalAutoBackgroundTheme
+                ) {
+                    generalState.autoBackgroundTheme =
+                        element.classList.contains("on");
+
+                    restartBackgroundThemeCheck();
+                }
+
+            }
+        );
+
+    });
 
 if (generalLanguage) {
     generalLanguage.addEventListener(
@@ -2080,33 +2102,14 @@ if (window.electronAPI?.onUpdateCheckResult) {
                 window.showToast(
                     "Обновлений нет"
                 );
-            } else if (
-                result.status === "downloaded"
-            ) {
-                window.showToast(
-                    `Обновление ${result.latestVersion || "новой версии"} загружено и будет установлено при закрытии приложения`
-                );
             } else {
                 window.showToast(
-                    result.error ? `Ошибка проверки: ${result.error}` : "Проверка обновлений недоступна"
+                    "Проверка обновлений недоступна"
                 );
             }
 
         }
     );
-}
-
-const manualCheckUpdatesButton = document.getElementById("manualCheckUpdatesButton");
-if (manualCheckUpdatesButton) {
-    manualCheckUpdatesButton.addEventListener("click", () => {
-        manualCheckUpdatesButton.disabled = true;
-        manualCheckUpdatesButton.textContent = "Проверяю…";
-        window.electronAPI?.checkForUpdates?.(true);
-        setTimeout(() => {
-            manualCheckUpdatesButton.disabled = false;
-            manualCheckUpdatesButton.textContent = "Проверить обновление";
-        }, 4000);
-    });
 }
 
 
@@ -2162,22 +2165,20 @@ function eventToAccelerator(event) {
     if (event.ctrlKey || event.metaKey) parts.push("CommandOrControl");
     if (event.altKey) parts.push("Alt");
     if (event.shiftKey) parts.push("Shift");
-    const ignoredCodes = new Set(["ControlLeft","ControlRight","ShiftLeft","ShiftRight","AltLeft","AltRight","MetaLeft","MetaRight","CapsLock","NumLock","ScrollLock","Fn"]);
-    if (ignoredCodes.has(event.code)) return null;
-    let key = null;
-    if (/^Key[A-Z]$/.test(event.code)) key = event.code.slice(3);
-    else if (/^Digit[0-9]$/.test(event.code)) key = event.code.slice(5);
-    else if (/^Numpad[0-9]$/.test(event.code)) key = `num${event.code.slice(6)}`;
-    else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(event.code)) key = event.code;
-    else if (event.code === "Space") key = "Space";
-    else if (event.code === "Enter") key = "Enter";
-    else if (event.code === "Escape") key = "Esc";
-    else if (event.code === "Backspace") key = "Backspace";
-    else if (event.code === "Delete") key = "Delete";
-    else if (event.code === "Tab") key = "Tab";
-    else if (event.code === "ArrowUp" || event.code === "ArrowDown" || event.code === "ArrowLeft" || event.code === "ArrowRight") key = event.code.replace("Arrow", "");
-    else if (event.key && event.key.length === 1 && /^[A-Za-z0-9]$/.test(event.key)) key = event.key.toUpperCase();
-    if (!parts.length || !key) return null;
+    const ignored = ["Control","Shift","Alt","Meta","OS","CapsLock","NumLock","ScrollLock","Fn"];
+    let key = event.key;
+    if (ignored.includes(key)) return null;
+    if (key === " ") key = "Space";
+    else if (key.startsWith("F") && /^F([1-9]|1[0-9]|2[0-4])$/.test(key)) {}
+    else if (key.startsWith("Arrow")) key = key.replace("Arrow", "");
+    else if (key === "Escape") key = "Esc";
+    else if (key === "Enter") key = "Enter";
+    else if (key === "Backspace") key = "Backspace";
+    else if (key === "Delete") key = "Delete";
+    else if (key === "Tab") key = "Tab";
+    else if (key.length === 1) key = key.toUpperCase();
+    else if (!/^[A-Za-z0-9]+$/.test(key)) return null;
+    if (!parts.length) return null;
     parts.push(key);
     return parts.join("+");
 }
@@ -2212,120 +2213,421 @@ window.electronAPI?.onHotkeysSaveResult?.(result => { if (!result.success) {
         window.showToast("Горячая клавиша сохранена");
     }
 });
-document.getElementById("resetHotkeysButton")?.addEventListener("click", () => { hotkeyState = { toggleOverlay: "CommandOrControl+Shift+O", showSettings: "CommandOrControl+Shift+S", editOverlay: "CommandOrControl+Shift+M", toggleMessageBackdrop: "CommandOrControl+Shift+B" }; applyHotkeys(hotkeyState); window.electronAPI?.setHotkeys?.(hotkeyState); });
+document.getElementById("resetHotkeysButton")?.addEventListener("click", () => { hotkeyState = { toggleOverlay: "CommandOrControl+Shift+O", showSettings: "CommandOrControl+Shift+S", editOverlay: "CommandOrControl+Shift+M" }; applyHotkeys(hotkeyState); window.electronAPI?.setHotkeys?.(hotkeyState); });
 /* =========================
    PROFILES
 ========================= */
 
-const profilesList = document.getElementById("profilesList");
-const activeProfileDescription = document.getElementById("activeProfileDescription");
-const profileModal = document.getElementById("profileModal");
-const profileModalTitle = document.getElementById("profileModalTitle");
-const profileModalDescription = document.getElementById("profileModalDescription");
-const profileModalInput = document.getElementById("profileModalInput");
-const profileModalCancel = document.getElementById("profileModalCancel");
-const profileModalConfirm = document.getElementById("profileModalConfirm");
-let profileModalMode = null;
-let profileModalOldName = null;
+const profilesList =
+    document.getElementById("profilesList");
 
-let profilesState = { activeProfile: "Основной профиль", profiles: {} };
+const activeProfileDescription =
+    document.getElementById(
+        "activeProfileDescription"
+    );
+
+let profilesState = {
+    activeProfile:
+        "Основной профиль",
+
+    profiles: {}
+};
+
 
 function renderProfiles(data) {
-    if (!data) return;
-    profilesState = data;
-    if (activeProfileDescription) activeProfileDescription.textContent = data.activeProfile || "Основной профиль";
-    if (!profilesList) return;
-    profilesList.innerHTML = "";
 
-    for (const name of Object.keys(data.profiles || {})) {
-        const row = document.createElement("div");
-        row.className = "profile";
-        const info = document.createElement("div");
-        const profileName = document.createElement("div");
-        profileName.className = "profile-name";
-        profileName.textContent = name;
-        const profileInfo = document.createElement("div");
-        profileInfo.className = "profile-info";
-        profileInfo.textContent = name === data.activeProfile ? "Используется сейчас" : "Профиль Overlay";
-        info.append(profileName, profileInfo);
-
-        const actions = document.createElement("div");
-        actions.className = "profile-actions";
-
-        const select = document.createElement("button");
-        select.className = "small-button";
-        select.textContent = name === data.activeProfile ? "Активен" : "Выбрать";
-        select.disabled = name === data.activeProfile;
-        if (name !== data.activeProfile) select.addEventListener("click", () => window.electronAPI?.selectProfile?.(name));
-        actions.appendChild(select);
-
-        const rename = document.createElement("button");
-        rename.className = "small-button";
-        rename.textContent = "Переименовать";
-        rename.addEventListener("click", () => openProfileModal("rename", name));
-        actions.appendChild(rename);
-
-        if (name !== "Основной профиль") {
-            const del = document.createElement("button");
-            del.className = "small-button";
-            del.textContent = "Удалить";
-            del.addEventListener("click", () => {
-                if (window.confirm(`Удалить профиль "${name}"?`)) window.electronAPI?.deleteProfile?.(name);
-            });
-            actions.appendChild(del);
-        }
-
-        row.append(info, actions);
-        profilesList.appendChild(row);
-    }
-}
-
-function openProfileModal(mode, oldName = null) {
-    profileModalMode = mode;
-    profileModalOldName = oldName;
-    if (!profileModal || !profileModalInput) return;
-    const rename = mode === "rename";
-    if (profileModalTitle) profileModalTitle.textContent = rename ? "Переименовать профиль" : "Создать профиль";
-    if (profileModalDescription) profileModalDescription.textContent = rename ? `Новое название для «${oldName}»` : "Введите название нового профиля";
-    profileModalInput.value = rename ? oldName : "";
-    profileModal.hidden = false;
-    setTimeout(() => { profileModalInput.focus(); profileModalInput.select(); }, 0);
-}
-
-function closeProfileModal() {
-    if (profileModal) profileModal.hidden = true;
-    profileModalMode = null;
-    profileModalOldName = null;
-}
-
-function submitProfileModal() {
-    const name = String(profileModalInput?.value || "").trim();
-    if (!name) { window.showToast?.("Введите название профиля"); return; }
-    if (profileModalMode === "create") window.electronAPI?.createProfile?.(name);
-    else if (profileModalMode === "rename") window.electronAPI?.renameProfile?.(profileModalOldName, name);
-    closeProfileModal();
-}
-
-document.getElementById("createProfileButton")?.addEventListener("click", () => openProfileModal("create"));
-profileModalCancel?.addEventListener("click", closeProfileModal);
-profileModalConfirm?.addEventListener("click", submitProfileModal);
-profileModal?.querySelector("[data-profile-modal-close]")?.addEventListener("click", closeProfileModal);
-profileModalInput?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") { event.preventDefault(); submitProfileModal(); }
-    if (event.key === "Escape") { event.preventDefault(); closeProfileModal(); }
-});
-
-document.getElementById("saveCurrentProfileButton")?.addEventListener("click", () => window.electronAPI?.updateCurrentProfile?.());
-window.electronAPI?.getProfiles?.().then(renderProfiles).catch(console.error);
-window.electronAPI?.onProfilesResult?.((result) => {
-    if (!result?.success) {
-        window.showToast?.(result?.error || "Ошибка профиля");
+    if (!data) {
         return;
     }
-    renderProfiles(result.profiles);
-    window.showToast?.("Профили обновлены");
-});
 
+
+    profilesState =
+        data;
+
+
+    if (activeProfileDescription) {
+
+        activeProfileDescription.textContent =
+            data.activeProfile ||
+            "Основной профиль";
+
+    }
+
+
+    if (!profilesList) {
+        return;
+    }
+
+
+    profilesList.innerHTML = "";
+
+
+    const profileNames =
+        Object.keys(
+            data.profiles || {}
+        );
+
+
+    for (
+        const name of profileNames
+    ) {
+
+        const row =
+            document.createElement(
+                "div"
+            );
+
+        row.className =
+            "profile";
+
+
+        const info =
+            document.createElement(
+                "div"
+            );
+
+
+        const profileName =
+            document.createElement(
+                "div"
+            );
+
+        profileName.className =
+            "profile-name";
+
+        profileName.textContent =
+            name;
+
+
+        const profileInfo =
+            document.createElement(
+                "div"
+            );
+
+        profileInfo.className =
+            "profile-info";
+
+        profileInfo.textContent =
+            name ===
+            data.activeProfile
+                ? "Используется сейчас"
+                : "Профиль Overlay";
+
+
+        info.appendChild(
+            profileName
+        );
+
+        info.appendChild(
+            profileInfo
+        );
+
+
+        const actions =
+            document.createElement(
+                "div"
+            );
+
+        actions.className =
+            "profile-actions";
+
+
+        /* =====================
+           ВЫБРАТЬ
+        ===================== */
+
+        const select =
+            document.createElement(
+                "button"
+            );
+
+        select.className =
+            "small-button";
+
+        select.textContent =
+            name === data.activeProfile
+                ? "Активен"
+                : "Выбрать";
+
+        select.disabled =
+            name === data.activeProfile;
+
+
+        if (
+            name !==
+            data.activeProfile
+        ) {
+
+            select.addEventListener(
+                "click",
+                () => {
+
+                    window.electronAPI
+                        ?.selectProfile
+                        ?.(
+                            name
+                        );
+
+                }
+            );
+
+        }
+
+
+        /* =====================
+           ПЕРЕИМЕНОВАТЬ
+        ===================== */
+
+        const rename =
+            document.createElement(
+                "button"
+            );
+
+        rename.className =
+            "small-button";
+
+        rename.textContent =
+            "Переименовать";
+
+
+        rename.addEventListener(
+            "click",
+            async () => {
+
+                const newName = prompt(
+    "Введите новое название профиля:",
+    name
+);
+
+if (!newName) {
+    return;
+}
+
+const trimmedName =
+    newName.trim();
+
+if (!trimmedName) {
+    return;
+}
+
+window.electronAPI
+    ?.renameProfile
+    ?.(
+        name,
+        trimmedName
+    );
+
+
+                if (
+                    result?.success
+                ) {
+
+                    window.showToast?.(
+                        "Профиль переименован"
+                    );
+
+                }
+
+            }
+        );
+
+
+        actions.appendChild(
+            select
+        );
+
+        actions.appendChild(
+            rename
+        );
+
+
+        /* =====================
+           УДАЛИТЬ
+        ===================== */
+
+        if (
+            name !==
+            "Основной профиль"
+        ) {
+
+            const del =
+                document.createElement(
+                    "button"
+                );
+
+            del.className =
+                "small-button";
+
+            del.textContent =
+                "Удалить";
+
+
+            del.addEventListener(
+                "click",
+                async () => {
+const confirmed =
+    confirm(
+        `Удалить профиль "${name}"?`
+    );
+
+
+                    if (
+                        confirmed
+                    ) {
+
+                        window.electronAPI
+                            ?.deleteProfile
+                            ?.(
+                                name
+                            );
+
+                    }
+
+                }
+            );
+
+
+            actions.appendChild(
+                del
+            );
+
+        }
+
+
+        row.appendChild(
+            info
+        );
+
+        row.appendChild(
+            actions
+        );
+
+
+        profilesList.appendChild(
+            row
+        );
+
+    }
+
+}
+
+
+/* =========================
+   СОЗДАТЬ ПРОФИЛЬ
+========================= */
+
+document
+    .getElementById(
+        "createProfileButton"
+    )
+    ?.addEventListener(
+        "click",
+        async () => {
+const name =
+    prompt(
+        "Введите название нового профиля:"
+    );
+
+if (!name) {
+    return;
+}
+
+const trimmedName =
+    name.trim();
+
+if (!trimmedName) {
+    return;
+}
+
+window.electronAPI
+    ?.createProfile
+    ?.(
+        trimmedName
+    );
+
+
+            if (
+                result?.success
+            ) {
+
+                window.showToast?.(
+                    "Профиль создан"
+                );
+
+            }
+
+        }
+    );
+
+
+/* =========================
+   СОХРАНИТЬ ПРОФИЛЬ
+========================= */
+
+document
+    .getElementById(
+        "saveCurrentProfileButton"
+    )
+    ?.addEventListener(
+        "click",
+        () => {
+
+            window.electronAPI
+                ?.updateCurrentProfile
+                ?.();
+
+        }
+    );
+
+
+/* =========================
+   ЗАГРУЗКА ПРОФИЛЕЙ
+========================= */
+
+window.electronAPI
+    ?.getProfiles
+    ?.()
+    .then(
+        renderProfiles
+    )
+    .catch(
+        console.error
+    );
+
+
+/* =========================
+   РЕЗУЛЬТАТ ОПЕРАЦИЙ
+========================= */
+
+window.electronAPI
+    ?.onProfilesResult
+    ?.(
+        (result) => {
+
+            if (
+                !result?.success
+            ) {
+
+                window.showToast?.(
+                    result?.error ||
+                    "Ошибка профиля"
+                );
+
+                return;
+
+            }
+
+
+            renderProfiles(
+                result.profiles
+            );
+
+            window.showToast?.(
+                "Профили обновлены"
+            );
+
+        }
+    );
 const twitchStatus = document.getElementById("twitchStatus");
 const chatStatus = document.getElementById("chatStatus");
 const twitchChatEnabled = document.getElementById("twitchChatEnabled");
@@ -2450,36 +2752,14 @@ connectChatButton?.addEventListener(
 launchOverlayButton?.addEventListener("click", () => window.electronAPI?.openOverlay?.());
 editOverlayButton?.addEventListener("click", () => window.electronAPI?.editOverlay?.());
 closeOverlayButton?.addEventListener("click", () => window.electronAPI?.closeOverlay?.());
-twitchTest?.addEventListener("click", async () => {
-    let channel = chatChannelMode?.value === "other" ? otherChatChannel?.value?.trim() : null;
-    const result = await window.electronAPI?.checkTwitchChannel?.(channel);
-    if (!result?.success) return window.showToast(result?.error || "Не удалось проверить канал");
-    window.showToast(result.found ? `Канал найден: ${result.displayName || result.username}` : "Канал не найден");
-});
+twitchTest?.addEventListener("click", async () => { const s = await window.electronAPI?.getTwitchSessionStatus?.(); if (!s?.connected) window.showToast("Сначала войдите в Twitch"); else window.showToast(`Аккаунт Twitch: ${s.username || "подключён"}`); });
 window.electronAPI?.onTwitchLoginStarted?.(data => { if (data?.userCode) window.showToast(`Код Twitch: ${data.userCode}`); });
 window.electronAPI?.onTwitchLoginSuccess?.(() => { window.showToast("Twitch подключён"); refreshTwitchStatus(); });
 window.electronAPI?.onTwitchLoggedOut?.(() => { setStatus(twitchStatus,false,"Не подключено"); if (twitchLogin) twitchLogin.textContent="Войти через Twitch"; });
 window.electronAPI?.onTwitchSessionRestored?.(refreshTwitchStatus);
 window.electronAPI?.onTwitchChatConnected?.(data => { setStatus(chatStatus,true,`Подключено: ${data?.channel || "канал"}`); if (connectChatButton) connectChatButton.textContent="Переподключить чат"; });
 window.electronAPI?.onTwitchChatDisconnected?.(() => { setStatus(chatStatus,false,"Не подключено"); if (connectChatButton) connectChatButton.textContent="Подключить чат"; });
-twitchChatEnabled?.addEventListener("click", async () => {
-    twitchChatEnabled.classList.toggle("on");
-    if (!twitchChatEnabled.classList.contains("on")) {
-        await window.electronAPI?.disconnectTwitchChat?.();
-        return;
-    }
-    const selectedChannel = chatChannelMode?.value === "other" ? otherChatChannel?.value?.trim() : null;
-    if (chatChannelMode?.value === "other" && !selectedChannel) {
-        twitchChatEnabled.classList.remove("on");
-        window.showToast?.("Введите название Twitch-канала");
-        return;
-    }
-    const r = await window.electronAPI?.connectTwitchChat?.(selectedChannel || null);
-    if (!r?.success) {
-        twitchChatEnabled.classList.remove("on");
-        window.showToast?.(r?.error || "Не удалось подключить чат");
-    }
-});
+twitchChatEnabled?.addEventListener("click", async () => { twitchChatEnabled.classList.toggle("on"); if (!twitchChatEnabled.classList.contains("on")) { await window.electronAPI?.disconnectTwitchChat?.(); } else { const r = await window.electronAPI?.connectTwitchChat?.(); if (!r?.success) { twitchChatEnabled.classList.remove("on"); window.showToast(r?.error || "Не удалось подключить чат"); } } });
 refreshTwitchStatus();
 
 /* =========================
@@ -2506,30 +2786,6 @@ window.electronAPI?.onOverlaySettings?.(applyEmotePage);
 if (window.electronAPI?.getOverlaySettings) window.electronAPI.getOverlaySettings().then(applyEmotePage).catch(console.error);
 window.electronAPI?.onThirdPartyEmotesLoaded?.(data=>{ if(emotesStatus) { emotesStatus.innerHTML=`<span class="status-dot" style="background:#35c46a"></span>BTTV: ${data?.bttv || 0} · 7TV: ${data?.sevenTv || 0}`; } });
 
-
-/* =========================
-   OBS
-========================= */
-const obsHost = document.getElementById("obsHost");
-const obsPort = document.getElementById("obsPort");
-const obsPassword = document.getElementById("obsPassword");
-const obsStatus = document.getElementById("obsStatus");
-const obsConnectButton = document.getElementById("obsConnectButton");
-const obsDisconnectButton = document.getElementById("obsDisconnectButton");
-function applyObsStatus(status) {
-    if (!obsStatus) return;
-    obsStatus.innerHTML = `<span class="status-dot"></span>${status?.connected ? "Подключено" : "Не подключено"}`;
-    const dot = obsStatus.querySelector(".status-dot");
-    if (dot) dot.style.background = status?.connected ? "#35c46a" : "#d59c31";
-}
-function saveObsPanel() {
-    window.electronAPI?.setObsSettings?.({ host: obsHost?.value || "127.0.0.1", port: Number(obsPort?.value) || 4455, password: obsPassword?.value || "" });
-}
-window.electronAPI?.getObsSettings?.().then((settings) => { if (!settings) return; if (obsHost) obsHost.value = settings.host || "127.0.0.1"; if (obsPort) obsPort.value = String(settings.port || 4455); if (obsPassword) obsPassword.value = settings.password || ""; }).catch(console.error);
-[obsHost, obsPort, obsPassword].filter(Boolean).forEach(el => el.addEventListener("change", saveObsPanel));
-obsConnectButton?.addEventListener("click", async () => { saveObsPanel(); const result = await window.electronAPI?.connectObs?.(); if (!result?.success) window.showToast?.(result?.error || "Не удалось подключиться к OBS"); });
-obsDisconnectButton?.addEventListener("click", async () => { await window.electronAPI?.disconnectObs?.(); });
-window.electronAPI?.onObsStatus?.(applyObsStatus);
 
 /* =========================
    OVERLAY CHAT SETTINGS

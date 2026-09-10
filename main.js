@@ -13,6 +13,15 @@ const {
     nativeImage
 } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const express = require("express");
+const http = require("http");
+const { Server: SocketIOServer } = require("socket.io");
+
+// Download real published updates automatically and install them immediately
+// after the package has been fully downloaded.
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+let updateInstallScheduled = false;
 
 autoUpdater.on("update-available", (info) => {
     sendUpdateCheckResult({
@@ -36,6 +45,24 @@ autoUpdater.on("update-downloaded", (info) => {
         currentVersion: app.getVersion(),
         latestVersion: info?.version || null
     });
+
+    if (updateInstallScheduled) return;
+    updateInstallScheduled = true;
+
+    // Give the renderer a moment to show the status, then let electron-updater
+    // close the app, run the NSIS update and relaunch the new version.
+    setTimeout(() => {
+        try {
+            autoUpdater.quitAndInstall(false, true);
+        } catch (error) {
+            updateInstallScheduled = false;
+            sendUpdateCheckResult({
+                status: "unavailable",
+                currentVersion: app.getVersion(),
+                error: `Не удалось установить обновление: ${error?.message || String(error)}`
+            });
+        }
+    }, 1200);
 });
 
 autoUpdater.on("error", (error) => {
@@ -255,6 +282,58 @@ function obsConnect() {
 }
 
 /* =========================
+   OBS BROWSER SOURCE
+========================= */
+
+let obsWebServer = null;
+let obsIo = null;
+const OBS_BROWSER_PORT = 3000;
+
+function startObsBrowserSourceServer() {
+    if (obsWebServer) return;
+
+    try {
+        const webApp = express();
+        obsWebServer = http.createServer(webApp);
+        obsIo = new SocketIOServer(obsWebServer, {
+            cors: { origin: "*" }
+        });
+
+        webApp.use(express.static(path.join(__dirname, "public")));
+
+        obsIo.on("connection", (socket) => {
+            socket.emit("overlay-settings", overlaySettings);
+        });
+
+        obsWebServer.on("error", (error) => {
+            console.error("Ошибка OBS Browser Source сервера:", error);
+        });
+
+        obsWebServer.listen(OBS_BROWSER_PORT, "127.0.0.1", () => {
+            console.log(`OBS Browser Source: http://127.0.0.1:${OBS_BROWSER_PORT}/obs.html`);
+        });
+    } catch (error) {
+        console.error("Не удалось запустить OBS Browser Source:", error);
+    }
+}
+
+function sendMessageToObsBrowser(message) {
+    try {
+        obsIo?.emit("twitch-chat-message", message);
+    } catch (error) {
+        console.error("Ошибка отправки сообщения в OBS Browser Source:", error);
+    }
+}
+
+function sendSettingsToObsBrowser(settings = overlaySettings) {
+    try {
+        obsIo?.emit("overlay-settings", settings);
+    } catch (error) {
+        console.error("Ошибка отправки настроек в OBS Browser Source:", error);
+    }
+}
+
+/* =========================
    TOKEN
 ========================= */
 
@@ -267,12 +346,6 @@ function getTokenPath() {
 
 
 function saveTwitchToken(tokenData) {
-
-    if (typeof generalSettings !== "undefined" && !generalSettings.rememberTwitchAccount) {
-        deleteTwitchToken();
-        twitchToken = tokenData || null;
-        return;
-    }
 
     try {
 
@@ -1062,6 +1135,8 @@ function sendOverlaySettings() {
         "overlay-settings",
         overlaySettings
     );
+
+    sendSettingsToObsBrowser(overlaySettings);
 }
 
 
@@ -1359,6 +1434,14 @@ function createOverlay() {
             overlayReady =
                 true;
 
+            // Apply edit interactivity immediately if editing was requested
+            // before the overlay finished loading.
+            if (overlayEditing) {
+                setOverlayInputPassthrough(false);
+                overlayWindow.setFocusable(true);
+                overlayWindow.focus();
+            }
+
 
             console.log(
                 "Overlay полностью загружен"
@@ -1523,8 +1606,8 @@ function sendMessageToOverlay(
         "twitch-chat-message",
         message
     );
-
 }
+
 
 /* =========================
    TWITCH BADGES
@@ -2084,6 +2167,7 @@ async function connectToTwitchChat(
             sendMessageToOverlay(
                 chatMessage
             );
+            sendMessageToObsBrowser(chatMessage);
 
         }
     );
@@ -2380,16 +2464,7 @@ ipcMain.on(
             );
         }
 
-        if (!generalSettings.rememberTwitchAccount) {
-            const wasConnected = Boolean(twitchToken?.accessToken);
-            if (wasConnected) {
-                disconnectFromTwitchChat().catch(() => {});
-            }
-            deleteTwitchToken();
-            if (wasConnected && mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send("twitch-logged-out");
-            }
-        } else if (twitchToken?.accessToken) {
+        if (twitchToken?.accessToken) {
             saveTwitchToken(twitchToken);
         }
 
@@ -2410,6 +2485,25 @@ ipcMain.on(
         checkForUpdates(Boolean(force));
     }
 );
+
+ipcMain.on("general-download-update", async () => {
+    if (!app.isPackaged) return;
+    try {
+        sendUpdateCheckResult({
+            status: "downloading",
+            currentVersion: app.getVersion(),
+            latestVersion: null
+        });
+        await autoUpdater.downloadUpdate();
+    } catch (error) {
+        console.error("AutoUpdater: ошибка загрузки:", error);
+        sendUpdateCheckResult({
+            status: "unavailable",
+            currentVersion: app.getVersion(),
+            error: error?.message || String(error)
+        });
+    }
+});
 
 /* =========================
    OVERLAY IPC
@@ -2593,9 +2687,7 @@ ipcMain.on(
     "overlay-edit-toggle",
     () => {
 
-        if (
-            overlayEditing
-        ) {
+        if (overlayEditing) {
 
             overlayEditing = false;
 
@@ -2613,54 +2705,39 @@ ipcMain.on(
                 "floating"
             );
 
-            overlayWindow.setFocusable(
-                false
-            );
+            overlayWindow.setFocusable(false);
 
             if (overlayReady) {
-
                 overlayWindow.webContents.send(
                     "overlay-edit-mode",
                     false
                 );
-
             }
 
             return;
         }
 
+        // The first click must create the overlay and enter edit mode.
+        overlayEditing = true;
 
         if (
             !overlayWindow ||
             overlayWindow.isDestroyed()
         ) {
-
+            createOverlay();
             return;
-
         }
 
-
-        overlayEditing = true;
-
-
-        overlayWindow.setIgnoreMouseEvents(
-            false
-        );
-
-        overlayWindow.setFocusable(
-            true
-        );
-
+        overlayWindow.show();
+        setOverlayInputPassthrough(false);
+        overlayWindow.setFocusable(true);
         overlayWindow.focus();
 
-
         if (overlayReady) {
-
             overlayWindow.webContents.send(
                 "overlay-edit-mode",
                 true
             );
-
         }
 
     }
@@ -2669,44 +2746,31 @@ ipcMain.on(
     "overlay-edit",
     () => {
 
+        overlayEditing = true;
+
         if (
             !overlayWindow ||
             overlayWindow.isDestroyed()
         ) {
-
+            // Direct edit command also works when the overlay is not open yet.
+            createOverlay();
             return;
-
         }
 
-
-        overlayEditing =
-            true;
-
-
-        overlayWindow.setIgnoreMouseEvents(
-            false
-        );
-
-        overlayWindow.setFocusable(
-            true
-        );
-
+        overlayWindow.show();
+        setOverlayInputPassthrough(false);
+        overlayWindow.setFocusable(true);
         overlayWindow.focus();
 
-
         if (overlayReady) {
-
             overlayWindow.webContents.send(
                 "overlay-edit-mode",
                 true
             );
-
         }
 
     }
 );
-
-
 ipcMain.on(
     "overlay-edit-stop",
     () => {
@@ -3380,11 +3444,12 @@ function restartAutoChatStatusCheck() {
 app.whenReady().then(
     async () => {
 
-        if (generalSettings.rememberTwitchAccount) {
-            loadTwitchToken();
-        }
+        // Twitch-сессия хранится между перезапусками приложения.
+        // Выход через кнопку «Выйти из Twitch» удаляет сохранённый токен.
+        loadTwitchToken();
 
         applyAutoStartSetting();
+        startObsBrowserSourceServer();
 
         createWindow();
         createTray();
