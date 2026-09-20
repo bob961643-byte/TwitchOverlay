@@ -33,13 +33,21 @@ check(/profiles-create/.test(main)&&/profiles-rename/.test(main)&&/profiles-dele
 check(/function createTray\(/.test(main)&&/function closeApplication\(/.test(main),"System tray / close handler missing");
 check(/twitch-check-channel/.test(main)&&/checkTwitchChannel/.test(preload),"Twitch channel check incomplete");
 check(/obs-connect/.test(main)&&/connectObs/.test(preload),"OBS WebSocket controls incomplete");
-check(/id="obsHost"/.test(index)&&/id="obsConnectButton"/.test(index),"OBS UI incomplete");
+check(/id="obsBrowserSourceUrl"/.test(index)&&/id="copyObsBrowserSourceUrl"/.test(index),"OBS Browser Source UI incomplete");
 check(/toggleMessageBackdrop/.test(main)&&/hotkeyToggleMessageBackdrop/.test(index),"Backdrop hotkey incomplete");
-check(/useTwitchUsernameColor/.test(main)&&/resolveUsernameColor/.test(overlay),"Twitch username color pipeline missing");
-check(/generalRememberTwitchAccount/.test(index)&&/generalMessageFilterEnabled/.test(index)&&/generalAutoChatStatus/.test(index),"General feature controls missing");
-check(/manualCheckUpdatesButton/.test(index)&&/checkForUpdates/.test(preload)&&/general-check-updates/.test(main),"Manual update check control/pipeline missing");
-check(/generalMessageState\(\s*generalAutoStart/.test(index)&&/generalMessageState\(\s*generalCheckUpdates/.test(index),"General checkbox persistence handler missing");
-check(index.indexOf('id="profileModal"') < index.indexOf("<script>"),"Profile modal must exist before renderer script");
+check(/normalizeTwitchColor/.test(main)&&/saveTwitchUserColor/.test(main),"Twitch username color persistence pipeline missing");
+check(/useTwitchUsernameColor/.test(main)&&/message\.color/.test(overlay),"Overlay applies per-message Twitch username color");
+check(/manualCheckUpdatesButton/.test(index)&&/checkForUpdates/.test(preload)&&/general-check-updates/.test(main)&&/general-download-update/.test(main),"Manual update check/download pipeline missing");
+check(/generalSwitchState\(\s*generalAutoStart/.test(index)&&/generalSwitchState\(\s*generalCheckUpdates/.test(index),"General checkbox persistence handler missing");
+check(/autoUpdater\.autoDownload\s*=\s*false/.test(main)&&/update-available/.test(main)&&/update-downloaded/.test(main),"Updater confirmation flow missing");
+check(/update-cancelled/.test(main)&&/download-progress/.test(main),"Updater error/progress events missing");
+check(/requestSingleInstanceLock/.test(main)&&/second-instance/.test(main),"Single-instance protection missing");
+check(/thirdPartyEmotes/.test(overlay) && /if \(\/\\\.gif\(\?:\$\|\[\?\#\]\)\/i\.test\(url\)\)/.test(overlay),"Animated third-party GIF renderer is present");
+check(/saveTwitchToken\(twitchToken\);\s*await validateTwitchToken\(\)/.test(main),"New Twitch token is persisted before validation");
+check(/twitchSessionState/.test(main) && /sessionPresent/.test(main) && /sessionState/.test(main),"Twitch session state distinguishes saved/offline/invalid sessions");
+check(/Migrate older plaintext token files/.test(main) && /\.corrupt-/.test(main),"Twitch token migration/corruption handling is present");
+check(/app\.requestSingleInstanceLock\(\)/.test(main) && /second-instance/.test(main),"Single-instance protection missing");
+
 
 if(failed) process.exit(1);
 console.log("PASS: integration/static audit");

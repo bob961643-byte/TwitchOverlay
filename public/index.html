@@ -911,6 +911,14 @@ copyObsBrowserSourceUrl?.addEventListener("click", async () => {
     </div>
 
     <div class="setting-row">
+        <div>
+            <div class="setting-label">Обновление приложения</div>
+            <div class="setting-description">Проверить GitHub и при наличии новой версии предложить обновление</div>
+        </div>
+        <button class="small-button" id="manualCheckUpdatesButton">Проверить обновление</button>
+    </div>
+
+    <div class="setting-row">
         <div class="setting-label">Язык интерфейса</div>
 
         <select class="select" id="generalLanguage">
@@ -2084,30 +2092,98 @@ if (window.electronAPI?.onGeneralSettings) {
     );
 }
 
+const manualCheckUpdatesButton =
+    document.getElementById("manualCheckUpdatesButton");
+
+let updateUiBusy = false;
+
+manualCheckUpdatesButton?.addEventListener("click", () => {
+    if (updateUiBusy) return;
+    updateUiBusy = true;
+    manualCheckUpdatesButton.disabled = true;
+    manualCheckUpdatesButton.textContent = "Проверка...";
+    window.electronAPI?.checkForUpdates?.(true);
+});
+
 if (window.electronAPI?.onUpdateCheckResult) {
     window.electronAPI.onUpdateCheckResult(
         (result) => {
+            if (!window.showToast) return;
 
-            if (!window.showToast) {
+            if (result.status === "checking") {
+                if (manualCheckUpdatesButton) {
+                    manualCheckUpdatesButton.disabled = true;
+                    manualCheckUpdatesButton.textContent = "Проверка...";
+                }
+                window.showToast("Проверяем обновления...");
                 return;
             }
 
             if (result.status === "available") {
-                window.showToast(
-                    `Доступно обновление: ${result.latestVersion}`
+                const latest = result.latestVersion || "новая версия";
+                if (manualCheckUpdatesButton) {
+                    manualCheckUpdatesButton.disabled = false;
+                    manualCheckUpdatesButton.textContent = "Проверить обновление";
+                }
+                updateUiBusy = false;
+
+                const accepted = window.confirm(
+                    `Доступно обновление ${latest}.\n\nХотите скачать и установить его?`
                 );
-            } else if (
-                result.status === "up-to-date"
-            ) {
-                window.showToast(
-                    "Обновлений нет"
-                );
-            } else {
-                window.showToast(
-                    "Проверка обновлений недоступна"
-                );
+
+                if (accepted) {
+                    updateUiBusy = true;
+                    if (manualCheckUpdatesButton) {
+                        manualCheckUpdatesButton.disabled = true;
+                        manualCheckUpdatesButton.textContent = "Загрузка...";
+                    }
+                    window.electronAPI?.downloadUpdate?.();
+                }
+                return;
             }
 
+            if (result.status === "downloading") {
+                updateUiBusy = true;
+                if (manualCheckUpdatesButton) {
+                    manualCheckUpdatesButton.disabled = true;
+                    const percent = Number.isFinite(Number(result.percent))
+                        ? ` ${Math.round(Number(result.percent))}%`
+                        : "";
+                    manualCheckUpdatesButton.textContent = `Загрузка...${percent}`;
+                }
+                if (Number.isFinite(Number(result.percent))) {
+                    window.showToast(`Загрузка обновления: ${Math.round(Number(result.percent))}%`);
+                } else {
+                    window.showToast("Загрузка обновления...");
+                }
+                return;
+            }
+
+            if (result.status === "downloaded") {
+                updateUiBusy = true;
+                if (manualCheckUpdatesButton) {
+                    manualCheckUpdatesButton.disabled = true;
+                    manualCheckUpdatesButton.textContent = "Установка...";
+                }
+                window.showToast("Обновление загружено. Приложение перезапустится...");
+                return;
+            }
+
+            updateUiBusy = false;
+            if (manualCheckUpdatesButton) {
+                manualCheckUpdatesButton.disabled = false;
+                manualCheckUpdatesButton.textContent = "Проверить обновление";
+            }
+
+            if (result.status === "cancelled") {
+                window.showToast("Загрузка обновления отменена.");
+            } else if (result.status === "up-to-date") {
+                window.showToast("Обновлений нет — используется последняя версия.");
+            } else if (result.status === "unavailable") {
+                window.showToast(
+                    `Не удалось проверить обновления: ${result.error || "сервер недоступен или нет интернета."}`
+                );
+            }
         }
     );
 }
@@ -2670,7 +2746,30 @@ const editOverlayButton = document.getElementById("editOverlayButton");
 const closeOverlayButton = document.getElementById("closeOverlayButton");
 const twitchTest = document.getElementById("twitchTest");
 function setStatus(el, ok, text) { if (!el) return; el.innerHTML = `<span class="status-dot"></span>${text}`; el.querySelector(".status-dot").style.background = ok ? "#35c46a" : "#d59c31"; }
-async function refreshTwitchStatus() { try { const s = await window.electronAPI?.getTwitchSessionStatus?.(); const ok = Boolean(s?.connected); setStatus(twitchStatus, ok, ok ? `Подключено: ${s.username || "Twitch"}` : "Не подключено"); if (twitchLogin) twitchLogin.textContent = ok ? "Выйти из Twitch" : "Войти через Twitch"; if (connectChatButton) connectChatButton.disabled = !ok; } catch(e) { setStatus(twitchStatus,false,"Ошибка проверки"); } }
+async function refreshTwitchStatus() {
+    try {
+        const s = await window.electronAPI?.getTwitchSessionStatus?.();
+        const ok = Boolean(s?.connected);
+        const saved = Boolean(s?.sessionPresent);
+
+        if (ok) {
+            setStatus(twitchStatus, true, `Подключено: ${s.username || "Twitch"}`);
+        } else if (saved && s?.sessionState === "unavailable") {
+            setStatus(twitchStatus, false, `Сессия сохранена${s.username ? `: ${s.username}` : ""} (Twitch недоступен)`);
+        } else if (s?.sessionState === "invalid") {
+            setStatus(twitchStatus, false, "Сессия истекла — войдите снова");
+        } else {
+            setStatus(twitchStatus, false, "Не подключено");
+        }
+
+        if (twitchLogin) twitchLogin.textContent = saved ? "Выйти из Twitch" : "Войти через Twitch";
+        // Chat requires a currently validated token. A saved offline session is kept,
+        // but chat connection is enabled only after Twitch becomes reachable again.
+        if (connectChatButton) connectChatButton.disabled = !ok;
+    } catch(e) {
+        setStatus(twitchStatus,false,"Ошибка проверки");
+    }
+}
 twitchLogin?.addEventListener("click", () => { if (twitchLogin.textContent.includes("Выйти")) window.electronAPI?.twitchLogout?.(); else window.electronAPI?.twitchLogin?.(); });
 connectChatButton?.addEventListener(
     "click",
@@ -2756,7 +2855,7 @@ twitchTest?.addEventListener("click", async () => { const s = await window.elect
 window.electronAPI?.onTwitchLoginStarted?.(data => { if (data?.userCode) window.showToast(`Код Twitch: ${data.userCode}`); });
 window.electronAPI?.onTwitchLoginSuccess?.(() => { window.showToast("Twitch подключён"); refreshTwitchStatus(); });
 window.electronAPI?.onTwitchLoggedOut?.(() => { setStatus(twitchStatus,false,"Не подключено"); if (twitchLogin) twitchLogin.textContent="Войти через Twitch"; });
-window.electronAPI?.onTwitchSessionRestored?.(refreshTwitchStatus);
+window.electronAPI?.onTwitchSessionRestored?.(() => refreshTwitchStatus());
 window.electronAPI?.onTwitchChatConnected?.(data => { setStatus(chatStatus,true,`Подключено: ${data?.channel || "канал"}`); if (connectChatButton) connectChatButton.textContent="Переподключить чат"; });
 window.electronAPI?.onTwitchChatDisconnected?.(() => { setStatus(chatStatus,false,"Не подключено"); if (connectChatButton) connectChatButton.textContent="Подключить чат"; });
 twitchChatEnabled?.addEventListener("click", async () => { twitchChatEnabled.classList.toggle("on"); if (!twitchChatEnabled.classList.contains("on")) { await window.electronAPI?.disconnectTwitchChat?.(); } else { const r = await window.electronAPI?.connectTwitchChat?.(); if (!r?.success) { twitchChatEnabled.classList.remove("on"); window.showToast(r?.error || "Не удалось подключить чат"); } } });

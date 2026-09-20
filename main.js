@@ -17,11 +17,27 @@ const express = require("express");
 const http = require("http");
 const { Server: SocketIOServer } = require("socket.io");
 
-// Download real published updates automatically and install them immediately
-// after the package has been fully downloaded.
+// Updates are checked explicitly. Nothing is downloaded until the user
+// confirms the update in the UI.
 autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.autoInstallOnAppQuit = false;
 let updateInstallScheduled = false;
+let updateCheckInProgress = false;
+let updateDownloadInProgress = false;
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+    app.quit();
+    process.exit(0);
+}
+
+app.on("second-instance", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.moveTop();
+});
 
 autoUpdater.on("update-available", (info) => {
     sendUpdateCheckResult({
@@ -39,6 +55,28 @@ autoUpdater.on("update-not-available", (info) => {
     });
 });
 
+autoUpdater.on("download-progress", (progress) => {
+    sendUpdateCheckResult({
+        status: "downloading",
+        currentVersion: app.getVersion(),
+        percent: Number.isFinite(progress?.percent) ? progress.percent : null,
+        bytesPerSecond: progress?.bytesPerSecond || 0,
+        transferred: progress?.transferred || 0,
+        total: progress?.total || 0
+    });
+});
+
+autoUpdater.on("update-cancelled", (info) => {
+    updateDownloadInProgress = false;
+    updateInstallScheduled = false;
+    sendUpdateCheckResult({
+        status: "cancelled",
+        currentVersion: app.getVersion(),
+        latestVersion: info?.version || null,
+        error: "Загрузка обновления отменена."
+    });
+});
+
 autoUpdater.on("update-downloaded", (info) => {
     sendUpdateCheckResult({
         status: "downloaded",
@@ -46,6 +84,7 @@ autoUpdater.on("update-downloaded", (info) => {
         latestVersion: info?.version || null
     });
 
+    updateDownloadInProgress = false;
     if (updateInstallScheduled) return;
     updateInstallScheduled = true;
 
@@ -87,6 +126,7 @@ let tray = null;
 
 let twitchClient = null;
 let twitchToken = null;
+let twitchSessionState = "missing"; // missing | loaded | valid | unavailable | invalid
 let connectedChannel = null;
 
 let badgeImagesCache = {};
@@ -346,139 +386,103 @@ function getTokenPath() {
 
 
 function saveTwitchToken(tokenData) {
-
     try {
+        if (!tokenData || typeof tokenData !== "object" || !tokenData.accessToken) {
+            throw new Error("Некорректные данные Twitch-сессии");
+        }
 
-        const json =
-            JSON.stringify(tokenData);
-
+        const json = JSON.stringify(tokenData);
         let data;
 
-        if (
-            safeStorage.isEncryptionAvailable()
-        ) {
-
-            data =
-                safeStorage.encryptString(
-                    json
-                );
-
+        if (safeStorage.isEncryptionAvailable()) {
+            data = safeStorage.encryptString(json);
         } else {
-
-            data =
-                Buffer.from(
-                    json,
-                    "utf8"
-                );
-
+            // Fallback only for environments where Electron secure storage is unavailable.
+            data = Buffer.from(json, "utf8");
         }
 
-        fs.writeFileSync(
-            getTokenPath(),
-            data
-        );
-
-        twitchToken =
-            tokenData;
-
+        fs.writeFileSync(getTokenPath(), data, { mode: 0o600 });
+        twitchToken = tokenData;
+        twitchSessionState = "loaded";
+        return true;
     } catch (error) {
-
-        console.error(
-            "Ошибка сохранения Twitch token:",
-            error
-        );
-
+        console.error("Ошибка сохранения Twitch-сессии:", error?.message || error);
+        return false;
     }
 }
-
 
 function loadTwitchToken() {
-
     try {
+        const filePath = getTokenPath();
 
-        const filePath =
-            getTokenPath();
-
-        if (
-            !fs.existsSync(filePath)
-        ) {
-
+        if (!fs.existsSync(filePath)) {
+            twitchToken = null;
+            twitchSessionState = "missing";
             return null;
-
         }
 
-        const data =
-            fs.readFileSync(
-                filePath
-            );
+        const data = fs.readFileSync(filePath);
+        let json = null;
 
-        let json;
-
-        if (
-            safeStorage.isEncryptionAvailable()
-        ) {
-
-            json =
-                safeStorage.decryptString(
-                    data
-                );
-
+        // Migrate older plaintext token files when secure storage is now available.
+        // This keeps existing accounts working without weakening the normal storage path.
+        const utf8 = data.toString("utf8").trim();
+        if (utf8.startsWith("{")) {
+            json = utf8;
+        } else if (safeStorage.isEncryptionAvailable()) {
+            json = safeStorage.decryptString(data);
         } else {
-
-            json =
-                data.toString(
-                    "utf8"
-                );
-
+            json = utf8;
         }
 
-        twitchToken =
-            JSON.parse(json);
+        const parsed = JSON.parse(json);
+        if (!parsed || typeof parsed !== "object" || !parsed.accessToken) {
+            throw new Error("Файл Twitch-сессии не содержит accessToken");
+        }
+
+        twitchToken = parsed;
+        twitchSessionState = "loaded";
+
+        // Migrate plaintext/legacy data to Electron secure storage when possible.
+        if (safeStorage.isEncryptionAvailable() && utf8.startsWith("{")) {
+            saveTwitchToken(parsed);
+        }
 
         return twitchToken;
-
     } catch (error) {
+        console.error("Не удалось восстановить Twitch-сессию:", error?.message || error);
+        twitchToken = null;
+        twitchSessionState = "invalid";
 
-        console.error(
-            "Ошибка загрузки Twitch token:",
-            error
-        );
+        // Keep the damaged file for diagnostics instead of repeatedly trying it.
+        try {
+            const filePath = getTokenPath();
+            if (fs.existsSync(filePath)) {
+                const backupPath = `${filePath}.corrupt-${Date.now()}`;
+                fs.renameSync(filePath, backupPath);
+            }
+        } catch (backupError) {
+            console.error("Не удалось переместить повреждённый файл Twitch-сессии:", backupError?.message || backupError);
+        }
 
         return null;
-
     }
 }
 
-
 function deleteTwitchToken() {
-
     try {
+        const filePath = getTokenPath();
 
-        const filePath =
-            getTokenPath();
-
-        if (
-            fs.existsSync(filePath)
-        ) {
-
-            fs.unlinkSync(
-                filePath
-            );
-
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
         }
 
         twitchToken = null;
-
+        twitchSessionState = "missing";
     } catch (error) {
-
-        console.error(
-            "Ошибка удаления Twitch token:",
-            error
-        );
-
+        console.error("Ошибка удаления Twitch-сессии:", error?.message || error);
     }
 }
-
 
 /* =========================
    TWITCH TOKEN VALIDATION
@@ -513,6 +517,11 @@ async function refreshTwitchToken() {
                 "Не удалось обновить Twitch token:",
                 data?.message || data?.error || response.status
             );
+            if (response.status === 400 || response.status === 401) {
+                twitchSessionState = "invalid";
+            } else {
+                twitchSessionState = "unavailable";
+            }
             return false;
         }
 
@@ -525,9 +534,11 @@ async function refreshTwitchToken() {
         };
 
         saveTwitchToken(twitchToken);
+        twitchSessionState = "loaded";
         return true;
     } catch (error) {
-        console.error("Ошибка обновления Twitch token:", error);
+        console.error("Ошибка обновления Twitch token:", error?.message || error);
+        twitchSessionState = "unavailable";
         return false;
     }
 }
@@ -536,6 +547,7 @@ async function refreshTwitchToken() {
 async function validateTwitchToken(options = {}) {
 
     if (!twitchToken?.accessToken) {
+        twitchSessionState = "missing";
         return false;
     }
 
@@ -558,6 +570,12 @@ async function validateTwitchToken(options = {}) {
                     return validateTwitchToken({ skipRefresh: true });
                 }
             }
+
+            if (response.status === 400 || response.status === 401) {
+                twitchSessionState = "invalid";
+            } else {
+                twitchSessionState = "unavailable";
+            }
             return false;
         }
 
@@ -574,9 +592,11 @@ async function validateTwitchToken(options = {}) {
         }
 
         saveTwitchToken(twitchToken);
+        twitchSessionState = "valid";
         return true;
     } catch (error) {
-        console.error("Ошибка проверки Twitch:", error);
+        console.error("Ошибка проверки Twitch:", error?.message || error);
+        twitchSessionState = "unavailable";
 
         if (!options.skipRefresh && twitchToken?.refreshToken) {
             const refreshed = await refreshTwitchToken();
@@ -774,6 +794,9 @@ async function pollTwitchToken(
             };
 
 
+            // Persist immediately so a temporary Twitch validation/network
+            // failure cannot make a newly authorized account disappear after restart.
+            saveTwitchToken(twitchToken);
             await validateTwitchToken();
             restartAutoChatStatusCheck();
 
@@ -1069,8 +1092,24 @@ async function checkForUpdates(force = false) {
         return null;
     }
 
+    if (updateCheckInProgress) {
+        sendUpdateCheckResult({
+            status: "checking",
+            currentVersion: app.getVersion(),
+            message: "Проверка уже выполняется."
+        });
+        return null;
+    }
+
+    updateCheckInProgress = true;
+    sendUpdateCheckResult({
+        status: "checking",
+        currentVersion: app.getVersion()
+    });
+
     try {
         const result = await autoUpdater.checkForUpdates();
+
         if (!result) {
             sendUpdateCheckResult({
                 status: "unavailable",
@@ -1080,18 +1119,12 @@ async function checkForUpdates(force = false) {
             return null;
         }
 
-        const latestVersion = result.updateInfo?.version || result.versionInfo?.version || app.getVersion();
-        sendUpdateCheckResult({
-            status: result.isUpdateAvailable ? "available" : "up-to-date",
-            currentVersion: app.getVersion(),
-            latestVersion
-        });
+        // electron-updater emits update-available/update-not-available with
+        // the authoritative result. Keep this function focused on starting
+        // the check and let those events update the UI.
         return result;
     } catch (error) {
-        console.error(
-            "AutoUpdater: ошибка проверки:",
-            error
-        );
+        console.error("AutoUpdater: ошибка проверки:", error);
 
         sendUpdateCheckResult({
             status: "unavailable",
@@ -1099,9 +1132,10 @@ async function checkForUpdates(force = false) {
             error: error?.message || String(error)
         });
         return null;
+    } finally {
+        updateCheckInProgress = false;
     }
 }
-
 function sendOverlaySettings() {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("overlay-settings", overlaySettings);
@@ -1760,12 +1794,26 @@ function pickEmoteUrl(host, animated = true) {
     if (!host) return null;
     const base = String(host.url || host || "").replace(/^https?:/, "");
     if (!base) return null;
-    const files = host.files || [];
-    const preferred = animated
-        ? files.find(f => /animated/i.test(String(f.format || "")) && /2x|3x/i.test(String(f.name || "")))
-        : null;
-    if (preferred?.name) return `https:${base}/${preferred.name}`;
-    const fallback = files.find(f => /2x|3x/i.test(String(f.name || ""))) || files[files.length - 1];
+
+    const files = Array.isArray(host.files) ? host.files : [];
+    const sizeScore = (file) => /3x/i.test(String(file?.name || "")) ? 3 : /2x/i.test(String(file?.name || "")) ? 2 : 1;
+
+    if (animated) {
+        const gif = files
+            .filter(file => /gif/i.test(String(file?.format || "")) || /\.gif$/i.test(String(file?.name || "")))
+            .sort((a, b) => sizeScore(b) - sizeScore(a))[0];
+        if (gif?.name) return `https:${base}/${gif.name}`;
+
+        const animatedFile = files
+            .filter(file => /webp|avif/i.test(String(file?.format || "")) && /2x|3x/i.test(String(file?.name || "")))
+            .sort((a, b) => sizeScore(b) - sizeScore(a))[0];
+        if (animatedFile?.name) return `https:${base}/${animatedFile.name}`;
+    }
+
+    const fallback = files
+        .filter(file => /2x|3x/i.test(String(file?.name || "")))
+        .sort((a, b) => sizeScore(b) - sizeScore(a))[0] || files[0];
+
     if (fallback?.name) return `https:${base}/${fallback.name}`;
     return `https:${base}/2x.webp`;
 }
@@ -1795,7 +1843,7 @@ async function loadThirdPartyEmotes(channel) {
         const global7 = await fetch("https://7tv.io/v3/emote-sets/global");
         if (global7.ok) {
             const data = await global7.json();
-            for (const e of data?.emotes || []) { const id=e?.data?.id; const url=id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : pickEmoteUrl(e?.data?.host, true); if(e?.name && url) sevenTv[e.name]={name:e.name,url,provider:"7tv"}; }
+            for (const e of data?.emotes || []) { const id=e?.data?.id; const url=pickEmoteUrl(e?.data?.host, true) || (id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : null); if(e?.name && url) sevenTv[e.name]={name:e.name,url,provider:"7tv"}; }
         }
     } catch (e) { console.error("7TV global emotes:", e); }
     try {
@@ -1809,7 +1857,7 @@ async function loadThirdPartyEmotes(channel) {
                     const setData = await setResponse.json();
                     for (const e of setData?.emotes || []) {
                         const id = e?.data?.id;
-                        const url = id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : pickEmoteUrl(e?.data?.host, true);
+                        const url = pickEmoteUrl(e?.data?.host, true) || (id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : null);
                         if (e?.name && url) sevenTv[e.name] = { name:e.name, url, provider:"7tv" };
                     }
                 }
@@ -1839,7 +1887,15 @@ function buildThirdPartyMessageEmotes(text) {
         if (!emote) continue;
         const start = match.index + leading.length;
         const end = start + token.length - 1;
-        replacements.push({ start, end, id: token, url: emote.url, name: token, provider: emote.provider });
+        replacements.push({
+            start,
+            end,
+            id: token,
+            url: emote.url,
+            name: token,
+            provider: emote.provider,
+            animated: /\.gif(?:$|[?#])/i.test(String(emote.url || ""))
+        });
     }
     return replacements;
 }
@@ -1852,8 +1908,87 @@ function buildThirdPartyMessageEmotes(text) {
 const twitchColorLookupCache = new Map();
 const twitchColorLookupPending = new Map();
 
-async function getTwitchUsernameColor(userId) {
+const twitchUserColorsFile = path.join(
+    app.getPath("userData"),
+    "twitch-user-colors.json"
+);
+let twitchUserColors = {};
+
+function normalizeTwitchColor(value) {
+    const raw = String(value || "").trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toUpperCase();
+    const rgb = raw.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(0|1|0?\.\d+))?\s*\)$/i);
+    if (rgb) {
+        const [r, g, b] = rgb.slice(1, 4).map(Number);
+        const alpha = rgb[4] === undefined ? null : Number(rgb[4]);
+        if (
+            [r, g, b].every(n => n >= 0 && n <= 255) &&
+            (alpha === null || (Number.isFinite(alpha) && alpha >= 0 && alpha <= 1))
+        ) {
+            if (alpha === null || alpha === 1) {
+                return `#${[r, g, b].map(n => n.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+            }
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+    }
+    return null;
+}
+
+function loadTwitchUserColors() {
+    try {
+        if (!fs.existsSync(twitchUserColorsFile)) {
+            twitchUserColors = {};
+            return;
+        }
+        const data = JSON.parse(fs.readFileSync(twitchUserColorsFile, "utf8"));
+        twitchUserColors = data && typeof data === "object" ? data : {};
+    } catch (error) {
+        console.error("Ошибка загрузки цветов пользователей Twitch:", error);
+        twitchUserColors = {};
+    }
+}
+
+function saveTwitchUserColor(userId, username, color) {
+    const normalized = normalizeTwitchColor(color);
+    if (!normalized) return;
+
     const id = String(userId || "").trim();
+    const name = String(username || "").trim().toLowerCase();
+    if (!id && !name) return;
+
+    if (id) twitchUserColors[`id:${id}`] = normalized;
+    if (name) twitchUserColors[`name:${name}`] = normalized;
+
+    if (id) twitchColorLookupCache.set(id, normalized);
+
+    try {
+        fs.writeFileSync(
+            twitchUserColorsFile,
+            JSON.stringify(twitchUserColors, null, 2),
+            "utf8"
+        );
+    } catch (error) {
+        console.error("Ошибка сохранения цвета пользователя Twitch:", error);
+    }
+}
+
+function getSavedTwitchUserColor(userId, username) {
+    const id = String(userId || "").trim();
+    const name = String(username || "").trim().toLowerCase();
+    return normalizeTwitchColor(
+        (id && twitchUserColors[`id:${id}`]) ||
+        (name && twitchUserColors[`name:${name}`]) ||
+        null
+    );
+}
+
+async function getTwitchUsernameColor(userId, username = "") {
+    const id = String(userId || "").trim();
+    const savedColor = getSavedTwitchUserColor(id, username);
+    if (savedColor) {
+        twitchColorLookupCache.set(id, savedColor);
+        return savedColor;
+    }
     if (!id || !twitchToken?.accessToken) return null;
     if (twitchColorLookupCache.has(id)) return twitchColorLookupCache.get(id) || null;
     if (twitchColorLookupPending.has(id)) return twitchColorLookupPending.get(id);
@@ -1872,8 +2007,9 @@ async function getTwitchUsernameColor(userId) {
             }
             const data = await response.json();
             const value = data?.data?.[0]?.color;
-            const color = /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value) : null;
+            const color = normalizeTwitchColor(value);
             twitchColorLookupCache.set(id, color);
+            if (color) saveTwitchUserColor(id, username, color);
             return color;
         } catch (error) {
             console.warn("Не удалось получить цвет пользователя Twitch:", error?.message || error);
@@ -2040,13 +2176,17 @@ async function connectToTwitchChat(
                 tags.username ||
                 "Unknown";
 
+            const userId = String(tags["user-id"] || "").trim();
+            const usernameKey = String(tags["username"] || username || "").trim();
             let twitchChatColor =
-                (typeof tags.color === "string" ? tags.color : null) ||
-                (typeof tags["color"] === "string" ? tags["color"] : null) ||
-                null;
+                normalizeTwitchColor(tags.color) ||
+                normalizeTwitchColor(tags["color"]) ||
+                getSavedTwitchUserColor(userId, usernameKey);
 
-            if (!twitchChatColor && tags["user-id"]) {
-                twitchChatColor = await getTwitchUsernameColor(tags["user-id"]);
+            if (twitchChatColor) {
+                saveTwitchUserColor(userId, usernameKey, twitchChatColor);
+            } else if (userId) {
+                twitchChatColor = await getTwitchUsernameColor(userId, usernameKey);
             }
 
             const isBroadcaster =
@@ -2109,8 +2249,9 @@ async function connectToTwitchChat(
                 message:
                     message,
 
-                color: twitchChatColor ||
-                    (typeof tags["userstate"]?.color === "string" ? tags["userstate"].color : null) ||
+color: normalizeTwitchColor(twitchChatColor) ||
+                    normalizeTwitchColor(tags["userstate"]?.color) ||
+                    getSavedTwitchUserColor(userId, usernameKey) ||
                     null,
 
                 badges:
@@ -2131,7 +2272,7 @@ async function connectToTwitchChat(
                     buildThirdPartyMessageEmotes(message),
 
                 userId:
-                    tags["user-id"] ||
+                    userId ||
                     null,
 
                 moderator:
@@ -2321,6 +2462,8 @@ ipcMain.handle(
 
         return {
             connected: valid,
+            sessionPresent: Boolean(twitchToken?.accessToken),
+            sessionState: twitchSessionState,
             username: twitchToken?.username || null,
             userId: twitchToken?.userId || null
         };
@@ -2487,20 +2630,34 @@ ipcMain.on(
 );
 
 ipcMain.on("general-download-update", async () => {
-    if (!app.isPackaged) return;
+    if (!app.isPackaged) {
+        sendUpdateCheckResult({
+            status: "unavailable",
+            currentVersion: app.getVersion(),
+            error: "Скачивание обновления доступно только в установленной версии приложения."
+        });
+        return;
+    }
+
+    if (updateDownloadInProgress || updateInstallScheduled) {
+        return;
+    }
+
+    updateDownloadInProgress = true;
     try {
         sendUpdateCheckResult({
             status: "downloading",
-            currentVersion: app.getVersion(),
-            latestVersion: null
+            currentVersion: app.getVersion()
         });
         await autoUpdater.downloadUpdate();
     } catch (error) {
+        updateDownloadInProgress = false;
+        updateInstallScheduled = false;
         console.error("AutoUpdater: ошибка загрузки:", error);
         sendUpdateCheckResult({
             status: "unavailable",
             currentVersion: app.getVersion(),
-            error: error?.message || String(error)
+            error: `Не удалось скачать обновление: ${error?.message || String(error)}`
         });
     }
 });
@@ -3447,6 +3604,7 @@ app.whenReady().then(
         // Twitch-сессия хранится между перезапусками приложения.
         // Выход через кнопку «Выйти из Twitch» удаляет сохранённый токен.
         loadTwitchToken();
+        loadTwitchUserColors();
 
         applyAutoStartSetting();
         startObsBrowserSourceServer();
