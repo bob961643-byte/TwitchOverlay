@@ -42,7 +42,7 @@ check(/generalSwitchState\(\s*generalAutoStart/.test(index)&&/generalSwitchState
 check(/autoUpdater\.autoDownload\s*=\s*false/.test(main)&&/update-available/.test(main)&&/update-downloaded/.test(main),"Updater confirmation flow missing");
 check(/update-cancelled/.test(main)&&/download-progress/.test(main),"Updater error/progress events missing");
 check(/requestSingleInstanceLock/.test(main)&&/second-instance/.test(main),"Single-instance protection missing");
-check(/thirdPartyEmotes/.test(overlay) && /if \(\/\\\.gif\(\?:\$\|\[\?\#\]\)\/i\.test\(url\)\)/.test(overlay),"Animated third-party GIF renderer is present");
+check(/thirdPartyEmotes/.test(overlay) && /twitch-gif/.test(overlay) && /\.gif/.test(overlay),"Animated Twitch/third-party GIF renderer is present");
 check(/saveTwitchToken\(twitchToken\);\s*await validateTwitchToken\(\)/.test(main),"New Twitch token is persisted before validation");
 check(/twitchSessionState/.test(main) && /sessionPresent/.test(main) && /sessionState/.test(main),"Twitch session state distinguishes saved/offline/invalid sessions");
 check(/Migrate older plaintext token files/.test(main) && /\.corrupt-/.test(main),"Twitch token migration/corruption handling is present");

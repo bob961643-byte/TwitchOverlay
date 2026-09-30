@@ -1787,6 +1787,50 @@ async function loadBadgeImages(channel) {
 
 
 /* =========================
+   TWITCH NATIVE GIFS
+========================= */
+
+function parseTwitchGifs(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return [];
+
+    const result = [];
+    for (const item of raw.split(",")) {
+        const parts = item.split("|");
+        if (parts.length < 3) continue;
+
+        const range = String(parts[0] || "").split("-");
+        const start = Number(range[0]);
+        const end = Number(range[1]);
+        const gifId = String(parts[1] || "").trim();
+        // Twitch requires the complete URL from the `gifs` IRC tag to be
+        // used without modification.
+        const url = String(parts.slice(2).join("|") || "").trim();
+
+        if (
+            !Number.isInteger(start) ||
+            !Number.isInteger(end) ||
+            start < 0 ||
+            end < start ||
+            !gifId ||
+            !/^https?:\/\//i.test(url)
+        ) continue;
+
+        result.push({
+            start,
+            end,
+            id: gifId,
+            url,
+            kind: "twitch-gif",
+            animated: true
+        });
+    }
+
+    return result;
+}
+
+
+/* =========================
    THIRD-PARTY EMOTES
 ========================= */
 
@@ -1820,11 +1864,31 @@ function pickEmoteUrl(host, animated = true) {
 
 async function loadThirdPartyEmotes(channel) {
     const clean = String(channel || "").replace(/^#/, "").trim().toLowerCase();
-    if (!clean || !twitchToken?.userId) return;
+    if (!clean || !twitchToken?.accessToken) return;
     if (thirdPartyEmoteCacheChannel === clean && (Object.keys(thirdPartyEmoteCache.bttv).length || Object.keys(thirdPartyEmoteCache.sevenTv).length)) return;
 
     const bttv = {};
     const sevenTv = {};
+    let channelTwitchUserId = null;
+
+    try {
+        const userResponse = await fetch(
+            `https://api.twitch.tv/helix/users?login=${encodeURIComponent(clean)}`,
+            {
+                headers: {
+                    "Client-ID": CLIENT_ID,
+                    Authorization: `Bearer ${twitchToken.accessToken}`
+                }
+            }
+        );
+        if (userResponse.ok) {
+            const userData = await userResponse.json();
+            channelTwitchUserId = String(userData?.data?.[0]?.id || "").trim() || null;
+        }
+    } catch (e) {
+        console.error("Twitch channel user lookup:", e);
+    }
+
     try {
         const globalBttv = await fetch("https://api.betterttv.net/3/cached/emotes/global");
         if (globalBttv.ok) {
@@ -1833,7 +1897,9 @@ async function loadThirdPartyEmotes(channel) {
         }
     } catch (e) { console.error("BTTV global emotes:", e); }
     try {
-        const userBttv = await fetch(`https://api.betterttv.net/3/cached/users/twitch/${encodeURIComponent(twitchToken.userId)}`);
+        const userBttv = channelTwitchUserId
+            ? await fetch(`https://api.betterttv.net/3/cached/users/twitch/${encodeURIComponent(channelTwitchUserId)}`)
+            : null;
         if (userBttv.ok) {
             const data = await userBttv.json();
             for (const e of [...(data.channelEmotes || []), ...(data.sharedEmotes || [])]) if (e?.code && e?.id) bttv[e.code] = { name:e.code, url:`https://cdn.betterttv.net/emote/${e.id}/3x`, staticUrl:`https://cdn.betterttv.net/emote/${e.id}/3x`, animatedUrl:`https://cdn.betterttv.net/emote/${e.id}/3x`, provider:"bttv", animated:Boolean(e.animated || e.imageType === "gif") };
@@ -1847,7 +1913,9 @@ async function loadThirdPartyEmotes(channel) {
         }
     } catch (e) { console.error("7TV global emotes:", e); }
     try {
-        const user7 = await fetch(`https://7tv.io/v3/users/twitch/${encodeURIComponent(twitchToken.userId)}`);
+        const user7 = channelTwitchUserId
+            ? await fetch(`https://7tv.io/v3/users/twitch/${encodeURIComponent(channelTwitchUserId)}`)
+            : null;
         if (user7.ok) {
             const data = await user7.json();
             const setId = data?.emote_set_id || data?.emote_set?.id;
@@ -2299,6 +2367,9 @@ color: resolveTwitchUsernameColor(
                 emotes:
                     tags.emotes ||
                     {},
+
+                gifs:
+                    parseTwitchGifs(tags.gifs),
 
                 thirdPartyEmotes:
                     buildThirdPartyMessageEmotes(message),

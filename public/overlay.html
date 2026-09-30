@@ -925,6 +925,24 @@ function renderMessageContent(container, message) {
         }
     }
 
+    // Twitch native GIFs are sent in the PRIVMSG `gifs` tag. Twitch
+    // requires the complete URL to be used exactly as provided.
+    for (const gif of Array.isArray(message.gifs) ? message.gifs : []) {
+        const start = Number(gif.start);
+        const end = Number(gif.end);
+        const url = String(gif.url || "").trim();
+        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || !url) continue;
+
+        replacements.push({
+            start,
+            end,
+            id: gif.id || "twitch-gif",
+            url,
+            kind: "twitch-gif",
+            animated: true
+        });
+    }
+
     // BTTV / 7TV replacements were already prepared by main.js, but the old
     // renderer ignored them. That made animated third-party emotes disappear.
     for (const replacement of Array.isArray(message.thirdPartyEmotes) ? message.thirdPartyEmotes : []) {
@@ -971,10 +989,9 @@ function renderMessageContent(container, message) {
         // convert them to canvas frames: keeping the original animated image
         // preserves timing and avoids a CPU-heavy animation loop.
         let url = replacement.url;
-        if (/\.gif(?:$|[?#])/i.test(url)) {
-            // A unique query prevents Chromium from reusing a partially
-            // decoded animation when the same emote appears in multiple
-            // messages at once.
+        if (replacement.kind !== "twitch-gif" && /\.gif(?:$|[?#])/i.test(url)) {
+            // Cache-bust third-party GIFs only. Twitch explicitly requires
+            // its native GIF URL to be used unchanged.
             const separator = url.includes("?") ? "&" : "?";
             url += `${separator}twitchoverlay=${Date.now()}-${emoteIndex++}`;
         }
