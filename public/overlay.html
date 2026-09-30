@@ -19,6 +19,11 @@
         }
 
         html,
+        :root {
+            --chat-emote-size: 30px;
+            --chat-gif-size: 64px;
+        }
+
         body {
             margin: 0;
             padding: 0;
@@ -155,9 +160,9 @@
 
             width: auto;
 
-            height: 30px;
+            height: var(--chat-emote-size, 30px);
 
-            max-width: 120px;
+            max-width: 240px;
 
             object-fit: contain;
 
@@ -168,6 +173,12 @@
                 -6px 2px;
         }
 
+
+.emote.gif-emote {
+            height: var(--chat-gif-size, 64px);
+            max-height: 160px;
+            max-width: 320px;
+        }
 
         .message-content {
 
@@ -446,6 +457,11 @@ function applyOverlaySettings(settings) {
         "--chat-font-size",
         `${fontSize}px`
     );
+
+    const emoteSize = Math.max(16, Math.min(100, Number(overlaySettings.emoteSize) || 30));
+    const gifSize = Math.max(20, Math.min(160, Number(overlaySettings.gifSize) || 64));
+    document.documentElement.style.setProperty("--chat-emote-size", `${emoteSize}px`);
+    document.documentElement.style.setProperty("--chat-gif-size", `${gifSize}px`);
 
     const horizontal =
         ["left", "center", "right"].includes(
@@ -976,6 +992,9 @@ function renderMessageContent(container, message) {
 
         const emote = document.createElement("img");
         emote.className = "emote";
+        if (replacement.kind === "twitch-gif" || /\.gif(?:$|[?#])/i.test(String(replacement.url || ""))) {
+            emote.classList.add("gif-emote");
+        }
         emote.alt = text.substring(
             replacement.start,
             Math.min(text.length, replacement.end + 1)

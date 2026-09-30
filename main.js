@@ -2916,6 +2916,12 @@ ipcMain.on(
                 : 30;
         }
         {
+            const n = Number(overlaySettings.gifSize);
+            overlaySettings.gifSize = Number.isFinite(n)
+                ? Math.max(20, Math.min(160, n))
+                : 64;
+        }
+        {
             const n = Number(overlaySettings.badgeSize);
             overlaySettings.badgeSize = Number.isFinite(n)
                 ? Math.max(12, Math.min(60, n))

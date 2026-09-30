@@ -1083,6 +1083,7 @@ copyObsBrowserSourceUrl?.addEventListener("click", async () => {
 <div class="section">
 <div class="section-title">Эмоты и значки</div>
 <div class="setting-row"><div class="setting-label">Размер Twitch-эмотов</div><input class="input" id="emoteSize" type="number" min="16" max="100" value="30"><span>px</span></div>
+<div class="setting-row"><div class="setting-label">Размер GIF</div><input class="input" id="gifSizeMessages" type="number" min="20" max="160" value="64"><span>px</span></div>
 <div class="setting-row"><div class="setting-label">Размер значков (Badges)</div><input class="input" id="badgeSize" type="number" min="12" max="60" value="20"><span>px</span></div>
 <div class="setting-row"><div class="setting-label">Отступ эмота от текста</div><input class="input" id="emoteSpacing" type="number" min="0" max="20" value="2"><span>px</span></div>
 <div class="setting-row"><div class="setting-label">Показывать Twitch-эмоты</div><div class="switch on" id="showTwitchEmotes" data-managed="true"></div></div>
@@ -1128,6 +1129,7 @@ copyObsBrowserSourceUrl?.addEventListener("click", async () => {
 <div class="section">
     <div class="section-title">Размер и отображение</div>
     <div class="setting-row"><div><div class="setting-label">Размер эмодзи</div><div class="setting-description">Размер Twitch / BTTV / 7TV эмотов</div></div><select class="select" id="emotesSize"><option value="16">16 px</option><option value="20">20 px</option><option value="24">24 px</option><option value="30" selected>30 px</option><option value="36">36 px</option><option value="48">48 px</option><option value="64">64 px</option><option value="80">80 px</option><option value="100">100 px</option></select></div>
+     <div class="setting-row"><div><div class="setting-label">Размер GIF</div><div class="setting-description">Размер Twitch и анимированных GIF-эмотов</div></div><select class="select" id="gifSize"><option value="32">32 px</option><option value="48">48 px</option><option value="64" selected>64 px</option><option value="80">80 px</option><option value="96">96 px</option><option value="120">120 px</option><option value="160">160 px</option></select></div>
     <div class="setting-row"><div><div class="setting-label">Анимированные эмоты</div><div class="setting-description">Использовать анимированную версию, если она доступна</div></div><div class="switch on" id="emotesAnimatedEnabled" data-managed="true"></div></div>
     <div class="setting-row"><div><div class="setting-label">Показывать Unicode-эмодзи</div><div class="setting-description">😂 ❤️ 🔥 и другие обычные символы остаются текстом</div></div><div class="switch on" id="emotesUnicodeEnabled" data-managed="true"></div></div>
 </div>
@@ -2868,13 +2870,15 @@ const emotesTwitchEnabled = document.getElementById("emotesTwitchEnabled");
 const emotesBttvEnabled = document.getElementById("emotesBttvEnabled");
 const emotes7tvEnabled = document.getElementById("emotes7tvEnabled");
 const emotesSize = document.getElementById("emotesSize");
+const gifSizePage = document.querySelector("#page-emotes #gifSize");
 const emotesAnimatedEnabled = document.getElementById("emotesAnimatedEnabled");
 const emotesUnicodeEnabled = document.getElementById("emotesUnicodeEnabled");
 const emotesStatus = document.getElementById("emotesStatus");
 function emoteState(el, fallback=true) { return el ? el.classList.contains("on") : fallback; }
-function applyEmotePage(settings) { if (!settings) return; if (emotesSize) emotesSize.value=String(settings.emoteSize||30); [[emotesTwitchEnabled,settings.showTwitchEmotes!==false],[emotesBttvEnabled,settings.showBttvEmotes!==false],[emotes7tvEnabled,settings.show7tvEmotes!==false],[emotesAnimatedEnabled,settings.animatedEmotes!==false],[emotesUnicodeEnabled,settings.showUnicodeEmotes!==false]].forEach(([e,v])=>e?.classList.toggle("on",Boolean(v))); }
+function applyEmotePage(settings) { if (!settings) return; if (emotesSize) emotesSize.value=String(settings.emoteSize||30); if (gifSizePage) gifSizePage.value=String(settings.gifSize||64); if (gifSize) gifSize.value=String(settings.gifSize||64); [[emotesTwitchEnabled,settings.showTwitchEmotes!==false],[emotesBttvEnabled,settings.showBttvEmotes!==false],[emotes7tvEnabled,settings.show7tvEmotes!==false],[emotesAnimatedEnabled,settings.animatedEmotes!==false],[emotesUnicodeEnabled,settings.showUnicodeEmotes!==false]].forEach(([e,v])=>e?.classList.toggle("on",Boolean(v))); }
 function sendEmotePage() { sendOverlaySettings(); }
 [emotesTwitchEnabled,emotesBttvEnabled,emotes7tvEnabled,emotesAnimatedEnabled,emotesUnicodeEnabled].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendEmotePage();}));
+gifSizePage?.addEventListener("change", () => { if (gifSize) gifSize.value = gifSizePage.value; sendOverlaySettings(); });
 emotesSize?.addEventListener("change", () => {
     // Размер на странице «Эмодзи» и размер в настройках сообщений
     // используют одно значение overlaySettings.emoteSize.
@@ -2907,6 +2911,7 @@ const messagePadding = document.getElementById("messagePadding");
 const messageGap = document.getElementById("messageGap");
 const textShadowEnabled = document.getElementById("textShadowEnabled");
 const emoteSize = document.getElementById("emoteSize");
+const gifSize = document.getElementById("gifSizeMessages");
 const badgeSize = document.getElementById("badgeSize");
 const emoteSpacing = document.getElementById("emoteSpacing");
 const showTwitchEmotes = document.getElementById("showTwitchEmotes");
@@ -2930,7 +2935,7 @@ usernameStyle:chatUsernameStyle?.value||"bold",
 chatHorizontal:chatHorizontal?.value||"left", chatVertical:chatVertical?.value||"top",
 messageBackgroundEnabled:switchState(messageBackgroundEnabled,false), messageBackgroundOpacity:Number(messageBackgroundOpacity?.value)||70,
 messageBorderRadius:Number(messageBorderRadius?.value)||6, messagePadding:Number(messagePadding?.value)||2, messageGap:Number(messageGap?.value)||5,
-textShadowEnabled:switchState(textShadowEnabled,true), emoteSize:Number(emoteSize?.value)||30, badgeSize:Number(badgeSize?.value)||20,
+textShadowEnabled:switchState(textShadowEnabled,true), emoteSize:Number(emoteSize?.value)||30, gifSize:Number(gifSize?.value)||64, badgeSize:Number(badgeSize?.value)||20,
 emoteSpacing:Number(emoteSpacing?.value)||2, showTwitchEmotes:switchState(showTwitchEmotes,true), showBadges:switchState(showBadges,true),
 showBttvEmotes:switchState(emotesBttvEnabled,true), show7tvEmotes:switchState(emotes7tvEnabled,true), animatedEmotes:switchState(emotesAnimatedEnabled,true), showUnicodeEmotes:switchState(emotesUnicodeEnabled,true),
 messageEnterEnabled:switchState(messageEnterEnabled,true), messageEnterType:messageEnterType?.value||"fade",
@@ -2944,7 +2949,7 @@ if(messageEnterType)messageEnterType.value=["fade","left","right","top","bottom"
 if(messageExitType)messageExitType.value=["fade","left","right","top","bottom","scale","none"].includes(settings.messageExitType)?settings.messageExitType:"fade";
 [messageEnterEnabled,messageExitEnabled].forEach((e)=>{if(e)e.classList.toggle("on",settings[e===messageEnterEnabled?"messageEnterEnabled":"messageExitEnabled"]!==false);});
 setN(messageBackgroundOpacity,settings.messageBackgroundOpacity,0,100,70);setN(messageBorderRadius,settings.messageBorderRadius,0,50,6);setN(messagePadding,settings.messagePadding,0,50,2);setN(messageGap,settings.messageGap,0,50,5);
-setN(emoteSize,settings.emoteSize,16,100,30);setN(badgeSize,settings.badgeSize,12,60,20);setN(emoteSpacing,settings.emoteSpacing,0,20,2);
+setN(emoteSize,settings.emoteSize,16,100,30);setN(gifSize,settings.gifSize,20,160,64);setN(badgeSize,settings.badgeSize,12,60,20);setN(emoteSpacing,settings.emoteSpacing,0,20,2);
 if(opacityValue&&opacitySlider){opacityValue.textContent=opacitySlider.value+"%";opacitySlider.style.setProperty("--value",opacitySlider.value+"%");}
 if(chatUsernameColor)chatUsernameColor.value=settings.usernameColor||"#ffffff";
 if(useTwitchUsernameColor)useTwitchUsernameColor.classList.toggle("on",settings.useTwitchUsernameColor!==false);
@@ -2952,9 +2957,9 @@ if(readableUsernameColors)readableUsernameColors.classList.toggle("on",settings.
 if(chatUsernameStyle)chatUsernameStyle.value=settings.usernameStyle||"bold";if(chatHorizontal)chatHorizontal.value=settings.chatHorizontal||"left";if(chatVertical)chatVertical.value=settings.chatVertical||"top";
 [[messageBackgroundEnabled,settings.messageBackgroundEnabled],[textShadowEnabled,settings.textShadowEnabled!==false],[showTwitchEmotes,settings.showTwitchEmotes!==false],[showBadges,settings.showBadges!==false]].forEach(([e,v])=>{if(e)e.classList.toggle("on",Boolean(v));});
 [[emotesTwitchEnabled,settings.showTwitchEmotes!==false],[emotesBttvEnabled,settings.showBttvEmotes!==false],[emotes7tvEnabled,settings.show7tvEmotes!==false],[emotesAnimatedEnabled,settings.animatedEmotes!==false],[emotesUnicodeEnabled,settings.showUnicodeEmotes!==false]].forEach(([e,v])=>{if(e)e.classList.toggle("on",Boolean(v));});
-if(emotesSize)emotesSize.value=String(settings.emoteSize||30); }
+if(emotesSize)emotesSize.value=String(settings.emoteSize||30); if(gifSizePage)gifSizePage.value=String(settings.gifSize||64); if(gifSize)gifSize.value=String(settings.gifSize||64); }
 function sendOverlaySettings(){ if(window.electronAPI?.setOverlaySettings) window.electronAPI.setOverlaySettings(collectOverlaySettings()); }
-[opacitySlider,chatFontSize,chatMaxMessages,chatMessageDuration,chatUsernameColor,chatUsernameStyle,chatHorizontal,chatVertical,messageBackgroundOpacity,messageBorderRadius,messagePadding,messageGap,emoteSize,badgeSize,emoteSpacing,messageEnterType,messageEnterDuration,messageExitType,messageExitDuration].filter(Boolean).forEach(e=>{e.addEventListener("input",()=>{if(e===opacitySlider&&opacityValue){opacityValue.textContent=e.value+"%";e.style.setProperty("--value",e.value+"%");}sendOverlaySettings();});e.addEventListener("change",sendOverlaySettings);});
+[opacitySlider,chatFontSize,chatMaxMessages,chatMessageDuration,chatUsernameColor,chatUsernameStyle,chatHorizontal,chatVertical,messageBackgroundOpacity,messageBorderRadius,messagePadding,messageGap,emoteSize,gifSize,badgeSize,emoteSpacing,messageEnterType,messageEnterDuration,messageExitType,messageExitDuration].filter(Boolean).forEach(e=>{e.addEventListener("input",()=>{if(e===opacitySlider&&opacityValue){opacityValue.textContent=e.value+"%";e.style.setProperty("--value",e.value+"%");}sendOverlaySettings();});e.addEventListener("change",sendOverlaySettings);});
 [messageBackgroundEnabled,textShadowEnabled,showTwitchEmotes,showBadges,messageEnterEnabled,messageExitEnabled,useTwitchUsernameColor,readableUsernameColors].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendOverlaySettings();}));
 if(window.electronAPI?.getOverlaySettings)window.electronAPI.getOverlaySettings().then(applySettingsToPanel).catch(e=>console.error("Ошибка загрузки настроек Overlay:",e));
 if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(applySettingsToPanel);
