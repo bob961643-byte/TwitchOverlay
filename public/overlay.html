@@ -767,6 +767,13 @@ function addMessage(message) {
     messageElement.className =
         "message";
 
+    const messageId = String(message.messageId || "").trim();
+    const userId = String(message.userId || "").trim();
+    const usernameKey = String(message.username || "").trim().toLowerCase();
+    if (messageId) messageElement.dataset.messageId = messageId;
+    if (userId) messageElement.dataset.userId = userId;
+    if (usernameKey) messageElement.dataset.username = usernameKey;
+
     if (
         message.badges &&
         Object.keys(message.badges).length
@@ -1022,6 +1029,11 @@ function removeMessage(
 
     }
 
+    if (element._timer) {
+        clearTimeout(element._timer);
+        element._timer = null;
+    }
+
     element.classList.add(
         "removing"
     );
@@ -1041,6 +1053,29 @@ function removeMessage(
         250
     );
 
+}
+
+
+if (window.overlayAPI?.onMessageDeleted) {
+    window.overlayAPI.onMessageDeleted((payload) => {
+        const messageId = String(payload?.messageId || "").trim();
+        const username = String(payload?.username || "").trim().toLowerCase();
+        const userId = String(payload?.userId || "").trim();
+        document.querySelectorAll("#chat .message").forEach((element) => {
+            const sameMessage = messageId && element.dataset.messageId === messageId;
+            const sameUser = payload?.removeUser && (
+                (userId && element.dataset.userId === userId) ||
+                (username && element.dataset.username === username)
+            );
+            if (sameMessage || sameUser) removeMessage(element);
+        });
+    });
+}
+
+if (window.overlayAPI?.onChatCleared) {
+    window.overlayAPI.onChatCleared(() => {
+        document.querySelectorAll("#chat .message").forEach(removeMessage);
+    });
 }
 
     </script>

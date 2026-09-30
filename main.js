@@ -1829,21 +1829,21 @@ async function loadThirdPartyEmotes(channel) {
         const globalBttv = await fetch("https://api.betterttv.net/3/cached/emotes/global");
         if (globalBttv.ok) {
             const data = await globalBttv.json();
-            for (const e of data || []) if (e?.code && e?.id) bttv[e.code] = { name:e.code, url:`https://cdn.betterttv.net/emote/${e.id}/3x`, provider:"bttv" };
+            for (const e of data || []) if (e?.code && e?.id) bttv[e.code] = { name:e.code, url:`https://cdn.betterttv.net/emote/${e.id}/3x`, staticUrl:`https://cdn.betterttv.net/emote/${e.id}/3x`, animatedUrl:`https://cdn.betterttv.net/emote/${e.id}/3x`, provider:"bttv", animated:Boolean(e.animated || e.imageType === "gif") };
         }
     } catch (e) { console.error("BTTV global emotes:", e); }
     try {
         const userBttv = await fetch(`https://api.betterttv.net/3/cached/users/twitch/${encodeURIComponent(twitchToken.userId)}`);
         if (userBttv.ok) {
             const data = await userBttv.json();
-            for (const e of [...(data.channelEmotes || []), ...(data.sharedEmotes || [])]) if (e?.code && e?.id) bttv[e.code] = { name:e.code, url:`https://cdn.betterttv.net/emote/${e.id}/3x`, provider:"bttv" };
+            for (const e of [...(data.channelEmotes || []), ...(data.sharedEmotes || [])]) if (e?.code && e?.id) bttv[e.code] = { name:e.code, url:`https://cdn.betterttv.net/emote/${e.id}/3x`, staticUrl:`https://cdn.betterttv.net/emote/${e.id}/3x`, animatedUrl:`https://cdn.betterttv.net/emote/${e.id}/3x`, provider:"bttv", animated:Boolean(e.animated || e.imageType === "gif") };
         }
     } catch (e) { console.error("BTTV channel emotes:", e); }
     try {
         const global7 = await fetch("https://7tv.io/v3/emote-sets/global");
         if (global7.ok) {
             const data = await global7.json();
-            for (const e of data?.emotes || []) { const id=e?.data?.id; const url=pickEmoteUrl(e?.data?.host, true) || (id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : null); if(e?.name && url) sevenTv[e.name]={name:e.name,url,provider:"7tv"}; }
+            for (const e of data?.emotes || []) { const id=e?.data?.id; const url=pickEmoteUrl(e?.data?.host, true) || (id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : null); if(e?.name && url) { const staticUrl = pickEmoteUrl(e?.data?.host, false) || (id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : url); sevenTv[e.name]={name:e.name,url,staticUrl,animatedUrl:url,provider:"7tv"}; } }
         }
     } catch (e) { console.error("7TV global emotes:", e); }
     try {
@@ -1858,7 +1858,7 @@ async function loadThirdPartyEmotes(channel) {
                     for (const e of setData?.emotes || []) {
                         const id = e?.data?.id;
                         const url = pickEmoteUrl(e?.data?.host, true) || (id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : null);
-                        if (e?.name && url) sevenTv[e.name] = { name:e.name, url, provider:"7tv" };
+                        if (e?.name && url) { const staticUrl = pickEmoteUrl(e?.data?.host, false) || (id ? `https://cdn.7tv.app/emote/${id}/2x.webp` : url); sevenTv[e.name] = { name:e.name, url, staticUrl, animatedUrl:url, provider:"7tv" }; }
                     }
                 }
             }
@@ -1891,10 +1891,13 @@ function buildThirdPartyMessageEmotes(text) {
             start,
             end,
             id: token,
-            url: emote.url,
+            url: (overlaySettings.animatedEmotes !== false ? emote.animatedUrl : emote.staticUrl) || emote.url,
             name: token,
             provider: emote.provider,
-            animated: /\.gif(?:$|[?#])/i.test(String(emote.url || ""))
+            fallbackUrl: emote.staticUrl && emote.staticUrl !== ((overlaySettings.animatedEmotes !== false ? emote.animatedUrl : emote.staticUrl) || emote.url)
+                ? emote.staticUrl
+                : null,
+            animated: Boolean(emote.animated || /\.(?:gif|webp)(?:$|[?#])/i.test(String((overlaySettings.animatedEmotes !== false ? emote.animatedUrl : emote.staticUrl) || emote.url || "")))
         });
     }
     return replacements;
@@ -1980,6 +1983,33 @@ function getSavedTwitchUserColor(userId, username) {
         (name && twitchUserColors[`name:${name}`]) ||
         null
     );
+}
+
+function getStableTwitchColor(userId, username = "") {
+    const key = String(userId || username || "unknown").trim().toLowerCase();
+    const palette = [
+        "#FF6B6B", "#FFA94D", "#FFD43B", "#69DB7C", "#38D9A9",
+        "#4DABF7", "#748FFC", "#9775FA", "#DA77F2", "#F783AC",
+        "#FF8787", "#20C997", "#15AABF", "#5C7CFA", "#BE4BDB"
+    ];
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) {
+        hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+    }
+    return palette[Math.abs(hash) % palette.length];
+}
+
+function resolveTwitchUsernameColor(userId, username, incomingColor = null) {
+    const direct = normalizeTwitchColor(incomingColor);
+    if (direct) {
+        saveTwitchUserColor(userId, username, direct);
+        return direct;
+    }
+    const saved = getSavedTwitchUserColor(userId, username);
+    if (saved) return saved;
+    const stable = getStableTwitchColor(userId, username);
+    if (userId || username) saveTwitchUserColor(userId, username, stable);
+    return stable;
 }
 
 async function getTwitchUsernameColor(userId, username = "") {
@@ -2178,15 +2208,16 @@ async function connectToTwitchChat(
 
             const userId = String(tags["user-id"] || "").trim();
             const usernameKey = String(tags["username"] || username || "").trim();
-            let twitchChatColor =
-                normalizeTwitchColor(tags.color) ||
-                normalizeTwitchColor(tags["color"]) ||
-                getSavedTwitchUserColor(userId, usernameKey);
+            let twitchChatColor = resolveTwitchUsernameColor(
+                userId,
+                usernameKey,
+                tags.color || tags["color"] || tags["userstate"]?.color
+            );
 
-            if (twitchChatColor) {
-                saveTwitchUserColor(userId, usernameKey, twitchChatColor);
-            } else if (userId) {
-                twitchChatColor = await getTwitchUsernameColor(userId, usernameKey);
+            // Если Twitch не прислал цвет в IRC, обновляем его через Helix
+            // в фоне. Сообщение не задерживаем из-за сетевого запроса.
+            if (userId && !normalizeTwitchColor(tags.color || tags["color"] || tags["userstate"]?.color)) {
+                getTwitchUsernameColor(userId, usernameKey).catch(() => {});
             }
 
             const isBroadcaster =
@@ -2249,10 +2280,11 @@ async function connectToTwitchChat(
                 message:
                     message,
 
-color: normalizeTwitchColor(twitchChatColor) ||
-                    normalizeTwitchColor(tags["userstate"]?.color) ||
-                    getSavedTwitchUserColor(userId, usernameKey) ||
-                    null,
+color: resolveTwitchUsernameColor(
+                    userId,
+                    usernameKey,
+                    twitchChatColor
+                ),
 
                 badges:
                     badges,
@@ -2274,6 +2306,9 @@ color: normalizeTwitchColor(twitchChatColor) ||
                 userId:
                     userId ||
                     null,
+
+                messageId:
+                    String(tags.id || tags["message-id"] || "").trim() || null,
 
                 moderator:
                     tags.mod === true ||
@@ -2313,6 +2348,75 @@ color: normalizeTwitchColor(twitchChatColor) ||
         }
     );
 
+
+    const sendChatRemoval = (payload) => {
+        if (!payload) return;
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send("twitch-chat-message-deleted", payload);
+        }
+        if (overlayWindow && !overlayWindow.isDestroyed() && overlayReady) {
+            overlayWindow.webContents.send("twitch-chat-message-deleted", payload);
+        }
+        try { obsIo?.emit("twitch-chat-message-deleted", payload); } catch (error) {
+            console.error("Ошибка удаления сообщения из OBS Browser Source:", error);
+        }
+    };
+
+    const sendChatClear = (payload) => {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send("twitch-chat-cleared", payload || {});
+        }
+        if (overlayWindow && !overlayWindow.isDestroyed() && overlayReady) {
+            overlayWindow.webContents.send("twitch-chat-cleared", payload || {});
+        }
+        try { obsIo?.emit("twitch-chat-cleared", payload || {}); } catch (error) {
+            console.error("Ошибка очистки чата в OBS Browser Source:", error);
+        }
+    };
+
+    // Удаление одного сообщения модератором/стримером (CLEARMSG).
+    twitchClient.on("messagedeleted", (channelName, username, deletedMessage, userstate) => {
+        const messageId = String(
+            userstate?.["target-msg-id"] || userstate?.["message-id"] || userstate?.id || ""
+        ).trim();
+        if (messageId) {
+            sendChatRemoval({ messageId, username: String(username || "").toLowerCase() });
+        }
+    });
+
+    // При timeout/ban Twitch также убирает сообщения пользователя из чата.
+    twitchClient.on("timeout", (channelName, username, reason, duration, userstate) => {
+        sendChatRemoval({
+            username: String(username || "").toLowerCase(),
+            userId: String(userstate?.["user-id"] || "").trim(),
+            removeUser: true,
+            reason: "timeout"
+        });
+    });
+
+    twitchClient.on("ban", (channelName, username, reason, userstate) => {
+        sendChatRemoval({
+            username: String(username || "").toLowerCase(),
+            userId: String(userstate?.["user-id"] || "").trim(),
+            removeUser: true,
+            reason: "ban"
+        });
+    });
+
+    // CLEARCHAT без username означает очистку всего чата.
+    twitchClient.on("clearchat", (channelName, username, userstate) => {
+        const target = String(username || "").trim().toLowerCase();
+        if (target) {
+            sendChatRemoval({
+                username: target,
+                userId: String(userstate?.["user-id"] || "").trim(),
+                removeUser: true,
+                reason: "clearchat"
+            });
+        } else {
+            sendChatClear({ channel: channelName });
+        }
+    });
 
     twitchClient.on(
         "disconnected",

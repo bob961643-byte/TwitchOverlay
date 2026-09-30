@@ -17,12 +17,24 @@ contextBridge.exposeInMainWorld(
             ipcRenderer.on(
                 "twitch-chat-message",
                 (event, message) => {
-
                     callback(message);
-
                 }
             );
 
+        },
+
+        onMessageDeleted: (callback) => {
+            ipcRenderer.on(
+                "twitch-chat-message-deleted",
+                (event, payload) => callback(payload)
+            );
+        },
+
+        onChatCleared: (callback) => {
+            ipcRenderer.on(
+                "twitch-chat-cleared",
+                (event, payload) => callback(payload)
+            );
         },
 
 

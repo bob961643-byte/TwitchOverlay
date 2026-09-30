@@ -505,6 +505,22 @@ function applyOverlaySettings(settings) {
 const obsSocket = io();
 obsSocket.on("overlay-settings", applyOverlaySettings);
 obsSocket.on("twitch-chat-message", (message) => addMessage(message));
+obsSocket.on("twitch-chat-message-deleted", (payload) => {
+    const messageId = String(payload?.messageId || "").trim();
+    const username = String(payload?.username || "").trim().toLowerCase();
+    const userId = String(payload?.userId || "").trim();
+    document.querySelectorAll("#chat .message").forEach((element) => {
+        const sameMessage = messageId && element.dataset.messageId === messageId;
+        const sameUser = payload?.removeUser && (
+            (userId && element.dataset.userId === userId) ||
+            (username && element.dataset.username === username)
+        );
+        if (sameMessage || sameUser) removeMessage(element);
+    });
+});
+obsSocket.on("twitch-chat-cleared", () => {
+    document.querySelectorAll("#chat .message").forEach(removeMessage);
+});
 
 function createBadge(
     name,
@@ -564,6 +580,13 @@ function addMessage(message) {
 
     messageElement.className =
         "message";
+
+    const messageId = String(message.messageId || "").trim();
+    const userId = String(message.userId || "").trim();
+    const usernameKey = String(message.username || "").trim().toLowerCase();
+    if (messageId) messageElement.dataset.messageId = messageId;
+    if (userId) messageElement.dataset.userId = userId;
+    if (usernameKey) messageElement.dataset.username = usernameKey;
 
     if (
         message.badges &&
@@ -818,6 +841,11 @@ function removeMessage(
 
         return;
 
+    }
+
+    if (element._timer) {
+        clearTimeout(element._timer);
+        element._timer = null;
     }
 
     element.classList.add(
