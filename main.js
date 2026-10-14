@@ -1304,6 +1304,53 @@ function setOverlayInputPassthrough(enabled) {
     }
 }
 
+function clampOverlayBoundsToVisibleDisplay(bounds) {
+    const displays = screen.getAllDisplays();
+    if (!displays.length) return bounds;
+
+    const intersects = (a, b) =>
+        a.x < b.x + b.width &&
+        a.x + a.width > b.x &&
+        a.y < b.y + b.height &&
+        a.y + a.height > b.y;
+
+    // Keep the current monitor when the overlay intersects one; otherwise recover
+    // it onto the primary monitor instead of reopening it outside the visible desktop.
+    let display = displays.find((item) => intersects(bounds, item.workArea));
+    if (!display) {
+        display = screen.getPrimaryDisplay();
+    }
+
+    const area = display.workArea;
+    const width = Math.max(300, Math.min(Number(bounds.width) || 650, area.width));
+    const height = Math.max(150, Math.min(Number(bounds.height) || 420, area.height));
+    const x = Math.min(Math.max(Number(bounds.x) || area.x, area.x), area.x + area.width - width);
+    const y = Math.min(Math.max(Number(bounds.y) || area.y, area.y), area.y + area.height - height);
+
+    return {
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(width),
+        height: Math.round(height)
+    };
+}
+
+function keepOverlayOnScreen() {
+    if (!overlayWindow || overlayWindow.isDestroyed()) return;
+    const current = overlayWindow.getBounds();
+    const safe = clampOverlayBoundsToVisibleDisplay(current);
+    if (
+        current.x !== safe.x ||
+        current.y !== safe.y ||
+        current.width !== safe.width ||
+        current.height !== safe.height
+    ) {
+        overlayWindow.setBounds(safe);
+        console.warn("Overlay bounds were outside the visible desktop; corrected:", safe);
+    }
+    saveOverlayBounds();
+}
+
 function createOverlay() {
 
     if (
@@ -1335,7 +1382,7 @@ function createOverlay() {
         savedOverlayBounds.width >= 300 &&
         savedOverlayBounds.height >= 150;
 
-    const overlayBounds =
+    const overlayBounds = clampOverlayBoundsToVisibleDisplay(
         useSavedBounds
             ? savedOverlayBounds
             : {
@@ -1343,7 +1390,8 @@ function createOverlay() {
                 y: workArea.y + 30,
                 width: initialWidth,
                 height: initialHeight
-            };
+            }
+    );
 
     overlayReady = false;
 
@@ -3036,6 +3084,8 @@ ipcMain.on(
                 return;
             }
 
+            keepOverlayOnScreen();
+            overlayWindow.show();
             setOverlayInputPassthrough(true);
 
             overlayWindow.setAlwaysOnTop(
@@ -3127,17 +3177,14 @@ ipcMain.on(
         }
 
 
-        overlayWindow.setIgnoreMouseEvents(
-            true,
-            {
-                forward:
-                    true
-            }
+        keepOverlayOnScreen();
+        overlayWindow.show();
+        overlayWindow.setAlwaysOnTop(
+            generalSettings.alwaysOnTop,
+            "floating"
         );
-
-        overlayWindow.setFocusable(
-            false
-        );
+        overlayWindow.setIgnoreMouseEvents(true);
+        overlayWindow.setFocusable(false);
 
 
         if (overlayReady) {
@@ -3487,6 +3534,9 @@ function handleHotkeyAction(action) {
             overlayWindow.setFocusable(true);
             overlayWindow.focus();
         } else {
+            keepOverlayOnScreen();
+            overlayWindow.show();
+            overlayWindow.setAlwaysOnTop(generalSettings.alwaysOnTop, "floating");
             overlayWindow.setIgnoreMouseEvents(true);
             overlayWindow.setFocusable(false);
         }

@@ -1,6 +1,6 @@
 {
   "name": "twitchoverlay",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "Twitch Overlay",
   "main": "main.js",
   "scripts": {
