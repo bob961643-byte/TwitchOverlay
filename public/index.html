@@ -539,6 +539,46 @@ body.theme-light .nav-item { color:#4d5360; }
 }
 
 /* =========================
+   VEADOTUBE
+========================= */
+
+.veado-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.veado-rule {
+    display: grid;
+    grid-template-columns: 160px minmax(140px, 1fr) minmax(130px, 1fr) minmax(130px, 1fr) 88px auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid rgba(255,255,255,.035);
+}
+
+.veado-rule .select,
+.veado-rule .input {
+    width: 100%;
+    min-width: 0;
+}
+
+.veado-duration {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.veado-rule .veado-remove {
+    width: 34px;
+    padding: 7px 0;
+}
+
+/* =========================
    STATUS
 ========================= */
 
@@ -855,6 +895,18 @@ copyObsBrowserSourceUrl?.addEventListener("click", async () => {
             </svg>
         </span>
         <span>OBS</span>
+    </button>
+
+    <button class="nav-item" data-page="veadotube">
+        <span class="nav-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="10" r="6"/>
+                <path d="M9.5 9h.01M14.5 9h.01"/>
+                <path d="M10 12.5c1.2.8 2.8.8 4 0"/>
+                <path d="M6 21c1.2-3 3.4-4.5 6-4.5s4.8 1.5 6 4.5"/>
+            </svg>
+        </span>
+        <span>veadotube</span>
     </button>
 
     <button class="nav-item" data-page="about">
@@ -1392,46 +1444,145 @@ copyObsBrowserSourceUrl?.addEventListener("click", async () => {
     </div>
 
     <div class="setting-row">
-
-        <div class="setting-label">
-            WebSocket
+        <div>
+            <div class="setting-label">WebSocket</div>
+            <div class="setting-description">Нужен для эффектов аватара. В OBS: Сервис → Настройки сервера WebSocket</div>
         </div>
-
-        <div class="status">
-            <span class="status-dot"></span>
-            Не подключено
+        <div class="veado-actions">
+            <div class="status" id="obsStatus"><span class="status-dot"></span>Не подключено</div>
+            <button class="small-button" id="obsConnectButton">Подключить</button>
         </div>
-
     </div>
 
     <div class="setting-row">
-
-        <div class="setting-label">
-            Адрес
-        </div>
-
-        <input
-            class="input"
-            type="text"
-            value="127.0.0.1"
-        >
-
+        <div class="setting-label">Адрес</div>
+        <input class="input" id="obsHost" type="text" value="127.0.0.1">
     </div>
 
     <div class="setting-row">
-
-        <div class="setting-label">
-            Порт
-        </div>
-
-        <input
-            class="input"
-            type="number"
-            value="4455"
-        >
-
+        <div class="setting-label">Порт</div>
+        <input class="input" id="obsPort" type="number" min="1" max="65535" value="4455">
     </div>
 
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">Пароль</div>
+            <div class="setting-description" id="obsPasswordHint">Из окна «Показать сведения о подключении» в настройках WebSocket</div>
+        </div>
+        <div class="veado-actions">
+            <input class="input" id="obsPassword" type="password" autocomplete="off" placeholder="Пароль WebSocket">
+            <button class="small-button" id="obsClearPassword" hidden>Удалить</button>
+        </div>
+    </div>
+
+</div>
+
+</section>
+
+
+<!-- =========================
+     VEADOTUBE MINI
+========================= -->
+
+<section class="page" id="page-veadotube">
+
+<h1 class="page-title">veadotube mini</h1>
+
+<div class="section">
+    <div class="section-title">Подключение</div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">veadotube mini</div>
+            <div class="setting-description">Запустите veadotube mini — оверлей найдёт его сам</div>
+        </div>
+        <div class="status" id="veadoStatus"><span class="status-dot"></span>Проверка…</div>
+    </div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">Реакции аватара</div>
+            <div class="setting-description">Награды, биты, подписки и рейды на время меняют состояние аватара</div>
+        </div>
+        <div class="switch on" id="veadoEnabled" data-managed="true"></div>
+    </div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">Состояния аватара</div>
+            <div class="setting-description" id="veadoStatesList">—</div>
+        </div>
+        <button class="small-button" id="veadoRefresh">Обновить</button>
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-title">Эффекты в OBS</div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">OBS</div>
+            <div class="setting-description">Эффекты двигают и перекрашивают аватар прямо в сцене — новые арты не нужны</div>
+        </div>
+        <div class="status" id="veadoObsStatus"><span class="status-dot"></span>—</div>
+    </div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">Источник аватара</div>
+            <div class="setting-description" id="veadoObsSourceHint">Источник с veadotube в текущей сцене OBS</div>
+        </div>
+        <div class="veado-actions">
+            <select class="select" id="veadoObsSource"></select>
+            <button class="small-button" id="veadoObsSourcesRefresh">Обновить</button>
+        </div>
+    </div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">Картинка руки</div>
+            <div class="setting-description" id="veadoHandImageName">Встроенная рука</div>
+        </div>
+        <div class="veado-actions">
+            <button class="small-button" id="veadoPickHand">Выбрать свою…</button>
+            <button class="small-button" id="veadoResetHand" hidden>Встроенная</button>
+        </div>
+    </div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">Где голова</div>
+            <div class="setting-description">Куда опускается рука: отступ от верха источника аватара. Увеличьте, если над головой много пустого места</div>
+        </div>
+        <div class="veado-actions">
+            <input class="range" id="veadoHeadOffset" type="range" min="0" max="60" step="1" value="10" style="width:180px;">
+            <span class="setting-description" id="veadoHeadOffsetValue">10%</span>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-title">Награды за баллы канала</div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">Twitch EventSub</div>
+            <div class="setting-description" id="veadoRewardsHint">Список наград берётся из вашего канала</div>
+        </div>
+        <div class="veado-actions">
+            <div class="status" id="veadoRewardsStatus"><span class="status-dot"></span>—</div>
+            <button class="small-button" id="veadoRelogin" hidden>Войти заново</button>
+            <button class="small-button" id="veadoLoadRewards">Обновить награды</button>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-title">Реакции</div>
+    <div class="setting-row">
+        <div class="setting-description">
+            Когда случается событие, аватар на указанное время получает эффект в OBS и/или состояние veadotube, а потом возвращается к прежнему.
+            Для битов, рейдов и подарочных подписок срабатывает реакция с самым большим подходящим порогом.
+            Несколько событий подряд проигрываются по очереди.
+        </div>
+    </div>
+    <div id="veadoRules"></div>
+    <div class="setting-row">
+        <div class="setting-description" id="veadoRulesEmpty">Реакций пока нет</div>
+        <button class="small-button" id="veadoAddRule">Добавить реакцию</button>
+    </div>
 </div>
 
 </section>
@@ -2963,6 +3114,454 @@ function sendOverlaySettings(){ if(window.electronAPI?.setOverlaySettings) windo
 [messageBackgroundEnabled,textShadowEnabled,showTwitchEmotes,showBadges,messageEnterEnabled,messageExitEnabled,useTwitchUsernameColor,readableUsernameColors].filter(Boolean).forEach(e=>e.addEventListener("click",()=>{e.classList.toggle("on");sendOverlaySettings();}));
 if(window.electronAPI?.getOverlaySettings)window.electronAPI.getOverlaySettings().then(applySettingsToPanel).catch(e=>console.error("Ошибка загрузки настроек Overlay:",e));
 if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(applySettingsToPanel);
+</script>
+<script>
+/* =========================
+   OBS WEBSOCKET
+========================= */
+(() => {
+    const api = window.electronAPI;
+    if (!api?.getObsSettings) return;
+
+    const statusEl = document.getElementById("obsStatus");
+    const connectEl = document.getElementById("obsConnectButton");
+    const hostEl = document.getElementById("obsHost");
+    const portEl = document.getElementById("obsPort");
+    const passwordEl = document.getElementById("obsPassword");
+    const clearPasswordEl = document.getElementById("obsClearPassword");
+    let current = null;
+
+    function renderSaved(settings) {
+        if (!settings) return;
+        hostEl.value = settings.host || "127.0.0.1";
+        portEl.value = String(settings.port || 4455);
+        clearPasswordEl.hidden = !settings.hasPassword;
+        passwordEl.placeholder = settings.hasPassword ? "Пароль сохранён" : "Пароль WebSocket";
+    }
+
+    function renderStatus(status) {
+        current = status || current;
+        if (!current) return;
+        const dot = document.createElement("span");
+        dot.className = "status-dot";
+        let text;
+        if (current.connected) {
+            dot.style.background = "#35c46a";
+            text = `Подключено: ${current.host}:${current.port}`;
+        } else if (current.connecting) {
+            text = "Подключение…";
+        } else if (current.error) {
+            text = current.error;
+        } else {
+            dot.style.background = "#6b7280";
+            text = "Не подключено";
+        }
+        statusEl.textContent = "";
+        statusEl.append(dot, document.createTextNode(text));
+        connectEl.textContent = current.connected || current.connecting ? "Отключить" : "Подключить";
+    }
+
+    function saveFields() {
+        const password = passwordEl.value;
+        api.setObsSettings({ host: hostEl.value, port: Number(portEl.value), password });
+        if (password) {
+            passwordEl.value = "";
+            passwordEl.placeholder = "Пароль сохранён";
+            clearPasswordEl.hidden = false;
+        }
+    }
+
+    [hostEl, portEl, passwordEl].forEach((input) => input.addEventListener("change", saveFields));
+
+    clearPasswordEl.addEventListener("click", () => {
+        api.setObsSettings({ host: hostEl.value, port: Number(portEl.value), clearPassword: true });
+        passwordEl.value = "";
+        passwordEl.placeholder = "Пароль WebSocket";
+        clearPasswordEl.hidden = true;
+    });
+
+    connectEl.addEventListener("click", async () => {
+        if (current?.connected || current?.connecting) {
+            renderStatus((await api.disconnectObs())?.status);
+            return;
+        }
+        saveFields();
+        renderStatus((await api.connectObs())?.status);
+    });
+
+    api.onObsStatus(renderStatus);
+    api.getObsSettings().then((settings) => {
+        renderSaved(settings);
+        renderStatus(settings.status);
+    }).catch((error) => console.error("OBS:", error));
+})();
+</script>
+<script>
+/* =========================
+   VEADOTUBE MINI
+========================= */
+(() => {
+    const api = window.electronAPI;
+    if (!api?.getVeadoStatus) return;
+
+    const el = (id) => document.getElementById(id);
+    const statusEl = el("veadoStatus");
+    const enabledEl = el("veadoEnabled");
+    const statesListEl = el("veadoStatesList");
+    const refreshEl = el("veadoRefresh");
+    const rewardsStatusEl = el("veadoRewardsStatus");
+    const rewardsHintEl = el("veadoRewardsHint");
+    const reloginEl = el("veadoRelogin");
+    const loadRewardsEl = el("veadoLoadRewards");
+    const rulesEl = el("veadoRules");
+    const rulesEmptyEl = el("veadoRulesEmpty");
+    const addRuleEl = el("veadoAddRule");
+    const obsStatusEl = el("veadoObsStatus");
+    const obsSourceEl = el("veadoObsSource");
+    const obsSourceHintEl = el("veadoObsSourceHint");
+    const obsSourcesRefreshEl = el("veadoObsSourcesRefresh");
+    const handNameEl = el("veadoHandImageName");
+    const pickHandEl = el("veadoPickHand");
+    const resetHandEl = el("veadoResetHand");
+    const headOffsetEl = el("veadoHeadOffset");
+    const headOffsetValueEl = el("veadoHeadOffsetValue");
+    let obsSources = null;
+
+    function renderHandSettings() {
+        const custom = settings.handImage || "";
+        handNameEl.textContent = custom ? custom.split(/[\\/]/).pop() : "Встроенная рука";
+        handNameEl.title = custom;
+        resetHandEl.hidden = !custom;
+        if (document.activeElement !== headOffsetEl) {
+            const percent = Math.round((settings.headOffset ?? 0.1) * 100);
+            headOffsetEl.value = String(percent);
+            headOffsetEl.style.setProperty("--value", `${(percent / 60) * 100}%`);
+            headOffsetValueEl.textContent = `${percent}%`;
+        }
+    }
+
+    pickHandEl?.addEventListener("click", async () => {
+        const result = await api.pickVeadoHandImage();
+        if (result?.success) {
+            settings.handImage = result.status.settings.handImage;
+            renderHandSettings();
+        }
+    });
+
+    resetHandEl?.addEventListener("click", () => {
+        settings.handImage = "";
+        scheduleSave();
+        renderHandSettings();
+    });
+
+    headOffsetEl?.addEventListener("input", () => {
+        const percent = Number(headOffsetEl.value) || 0;
+        settings.headOffset = percent / 100;
+        headOffsetEl.style.setProperty("--value", `${(percent / 60) * 100}%`);
+        headOffsetValueEl.textContent = `${percent}%`;
+        scheduleSave();
+    });
+
+    const TRIGGERS = [
+        { value: "reward", label: "Награда за баллы" },
+        { value: "bits", label: "Биты" },
+        { value: "sub", label: "Подписка" },
+        { value: "giftsub", label: "Подарочные подписки" },
+        { value: "raid", label: "Рейд" }
+    ];
+    const AMOUNT_LABELS = { bits: "от … битов", giftsub: "от … подписок", raid: "от … зрителей" };
+
+    let status = null;
+    let settings = { enabled: true, rules: [] };
+    let rewards = null;
+    let rewardsError = "";
+    let saveTimer = null;
+
+    const setDot = (target, color, text) => {
+        if (!target) return;
+        target.textContent = "";
+        const dot = document.createElement("span");
+        dot.className = "status-dot";
+        dot.style.background = color;
+        target.append(dot, document.createTextNode(text));
+    };
+    const GREEN = "#35c46a", ORANGE = "#d59c31", GREY = "#6b7280";
+
+    const option = (value, label, selected) => {
+        const o = document.createElement("option");
+        o.value = value;
+        o.textContent = label;
+        if (selected) o.selected = true;
+        return o;
+    };
+
+    function scheduleSave() {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(async () => {
+            try {
+                renderStatus(await api.setVeadoSettings(settings));
+            } catch (error) {
+                window.showToast?.("Не удалось сохранить реакции veadotube");
+                console.error(error);
+            }
+        }, 300);
+    }
+
+    function renderStatus(next) {
+        if (next) status = next;
+        if (!status) return;
+        const v = status.veadotube || {};
+
+        enabledEl?.classList.toggle("on", settings.enabled);
+
+        const queue = status.queueLength ? ` · в очереди ${status.queueLength}` : "";
+        if (!settings.enabled) {
+            setDot(statusEl, GREY, "Реакции выключены");
+        } else if (v.connected) {
+            const current = v.current ? ` · сейчас «${v.current}»` : "";
+            setDot(statusEl, GREEN, `Подключено: ${v.instance?.name || "veadotube mini"} ${v.instance?.version || ""}${current}${queue}`);
+        } else {
+            setDot(statusEl, ORANGE, (v.error || "Поиск veadotube mini…") + queue);
+        }
+
+        const obs = status.obs || {};
+        if (obs.connected) {
+            setDot(obsStatusEl, GREEN, "OBS подключён");
+            if (!obsSources) loadObsSources();
+        } else {
+            setDot(obsStatusEl, ORANGE, obs.error || "OBS не подключён — подключите его на странице OBS");
+            obsSources = null;
+        }
+        renderObsSources();
+        renderHandSettings();
+
+        const states = v.states || [];
+        statesListEl.textContent = states.length
+            ? states.map((s) => s.name).join(", ")
+            : (v.connected ? "Нет состояний" : "veadotube не подключён");
+        if (v.connected && states.length < 2) {
+            statesListEl.textContent += " — для смены состояний нужны ещё арты, а эффекты OBS работают и без них";
+        }
+
+        const usesRewards = settings.rules.some((r) => r.type === "reward");
+        const needsRelogin = status.twitchLoggedIn && !status.redemptionsScope;
+        reloginEl.hidden = !needsRelogin;
+
+        if (!status.twitchLoggedIn) {
+            setDot(rewardsStatusEl, ORANGE, "Войдите в Twitch");
+        } else if (needsRelogin) {
+            setDot(rewardsStatusEl, ORANGE, "Нужен повторный вход");
+            rewardsHintEl.textContent = "Войдите в Twitch ещё раз и разрешите чтение наград за баллы";
+        } else if (!usesRewards) {
+            setDot(rewardsStatusEl, GREY, "Не используется");
+            rewardsHintEl.textContent = "Подключится, когда появится реакция на награду";
+        } else {
+            const es = status.eventSub || {};
+            setDot(rewardsStatusEl, es.state === "connected" ? GREEN : ORANGE, es.message || "Ожидание…");
+            rewardsHintEl.textContent = rewardsError || "Список наград берётся из вашего канала";
+        }
+
+        renderRules();
+    }
+
+    function renderRules() {
+        // Не перерисовываем строку, пока в ней что-то редактируют.
+        const active = document.activeElement;
+        if (rulesEl.contains(active) && (active.tagName === "INPUT" || active.tagName === "SELECT")) return;
+
+        const states = status?.veadotube?.states || [];
+        rulesEl.textContent = "";
+        rulesEmptyEl.textContent = settings.rules.length ? "" : "Реакций пока нет";
+
+        settings.rules.forEach((rule, index) => {
+            const row = document.createElement("div");
+            row.className = "veado-rule";
+
+            const type = document.createElement("select");
+            type.className = "select";
+            TRIGGERS.forEach((t) => type.append(option(t.value, t.label, t.value === rule.type)));
+            type.addEventListener("change", () => {
+                rule.type = type.value;
+                if (rule.type !== "reward") { rule.rewardId = ""; rule.rewardTitle = ""; }
+                scheduleSave();
+                renderRules();
+                if (rule.type === "reward" && !rewards) loadRewards();
+            });
+
+            let target;
+            if (rule.type === "reward") {
+                target = document.createElement("select");
+                target.className = "select";
+                target.append(option("", rewards ? "Выберите награду" : "Награды не загружены", !rule.rewardId));
+                const list = rewards || [];
+                if (rule.rewardId && !list.some((r) => r.id === rule.rewardId)) {
+                    target.append(option(rule.rewardId, rule.rewardTitle || "Сохранённая награда", true));
+                }
+                list.forEach((r) => target.append(option(r.id, `${r.title} · ${r.cost}`, r.id === rule.rewardId)));
+                target.addEventListener("change", () => {
+                    rule.rewardId = target.value;
+                    rule.rewardTitle = (rewards || []).find((r) => r.id === target.value)?.title || "";
+                    scheduleSave();
+                });
+            } else if (rule.type === "sub") {
+                target = document.createElement("div");
+                target.className = "setting-description";
+                target.textContent = "Новая подписка или продление";
+            } else {
+                target = document.createElement("input");
+                target.className = "input";
+                target.type = "number";
+                target.min = "0";
+                target.placeholder = AMOUNT_LABELS[rule.type];
+                target.title = AMOUNT_LABELS[rule.type];
+                target.value = rule.minAmount ? String(rule.minAmount) : "";
+                target.addEventListener("input", () => {
+                    rule.minAmount = Math.max(0, Math.floor(Number(target.value) || 0));
+                    scheduleSave();
+                });
+            }
+
+            const effect = document.createElement("select");
+            effect.className = "select";
+            effect.append(option("", "Без эффекта OBS", !rule.effect));
+            (status?.effects || []).forEach((e) => effect.append(option(e.id, e.label, e.id === rule.effect)));
+            effect.addEventListener("change", () => { rule.effect = effect.value; scheduleSave(); });
+
+            const state = document.createElement("select");
+            state.className = "select";
+            state.append(option("", "Без смены состояния", !rule.state));
+            if (rule.state && !states.some((s) => s.id === rule.state)) {
+                state.append(option(rule.state, `${rule.state} (нет в veadotube)`, true));
+            }
+            states.forEach((s) => state.append(option(s.id, s.name, s.id === rule.state)));
+            state.addEventListener("change", () => { rule.state = state.value; scheduleSave(); });
+
+            const durationWrap = document.createElement("label");
+            durationWrap.className = "veado-duration";
+            const duration = document.createElement("input");
+            duration.className = "input";
+            duration.type = "number";
+            duration.min = "1";
+            duration.max = "600";
+            duration.value = String(rule.durationSec);
+            duration.addEventListener("input", () => {
+                rule.durationSec = Math.max(1, Math.min(600, Number(duration.value) || 1));
+                scheduleSave();
+            });
+            durationWrap.append(duration, document.createTextNode("сек"));
+
+            const test = document.createElement("button");
+            test.className = "small-button";
+            test.textContent = "Проверить";
+            test.addEventListener("click", async () => {
+                const result = await api.testVeadoReaction(rule.state, rule.effect, rule.durationSec);
+                if (!result?.success) window.showToast?.(result?.error || "Не удалось запустить реакцию");
+            });
+
+            const remove = document.createElement("button");
+            remove.className = "small-button veado-remove";
+            remove.textContent = "✕";
+            remove.title = "Удалить реакцию";
+            remove.addEventListener("click", () => {
+                settings.rules.splice(index, 1);
+                scheduleSave();
+                renderRules();
+            });
+
+            row.append(type, target, effect, state, durationWrap, test, remove);
+            rulesEl.append(row);
+        });
+    }
+
+    async function loadRewards() {
+        rewardsError = "";
+        const result = await api.getVeadoRewards().catch((e) => ({ success: false, error: e?.message }));
+        if (result?.success) {
+            rewards = result.rewards;
+            if (!rewards.length) rewardsError = "На канале нет своих наград за баллы";
+        } else {
+            rewardsError = result?.error || "Не удалось загрузить награды";
+        }
+        renderStatus();
+    }
+
+    enabledEl?.addEventListener("click", () => {
+        settings.enabled = !settings.enabled;
+        scheduleSave();
+        renderStatus();
+    });
+
+    refreshEl?.addEventListener("click", async () => {
+        const result = await api.refreshVeadoStates();
+        if (!result?.success) window.showToast?.(result?.error || "veadotube не ответил");
+        renderStatus(result?.status);
+    });
+
+    loadRewardsEl?.addEventListener("click", loadRewards);
+
+    reloginEl?.addEventListener("click", () => {
+        api.twitchLogin?.();
+        window.showToast?.("Подтвердите вход в открывшемся окне Twitch");
+    });
+
+    function renderObsSources() {
+        if (!obsSourceEl || document.activeElement === obsSourceEl) return;
+        obsSourceEl.textContent = "";
+        const list = obsSources?.sources || [];
+        obsSourceEl.append(option("", list.length ? "Выберите источник" : "Источники не загружены", !settings.obsSource));
+        if (settings.obsSource && !list.some((s) => s.name === settings.obsSource)) {
+            obsSourceEl.append(option(settings.obsSource, `${settings.obsSource}${obsSources ? " (нет в сцене)" : ""}`, true));
+        }
+        list.forEach((s) => obsSourceEl.append(option(s.name, s.name, s.name === settings.obsSource)));
+        obsSourceHintEl.textContent = obsSources?.sceneName
+            ? `Источник с veadotube в сцене «${obsSources.sceneName}»`
+            : "Источник с veadotube в текущей сцене OBS";
+    }
+
+    async function loadObsSources() {
+        const result = await api.listObsSources().catch((e) => ({ success: false, error: e?.message }));
+        if (result?.success) {
+            obsSources = { sceneName: result.sceneName, sources: result.sources };
+            // Если источник ещё не выбран, подбираем тот, в названии которого есть «veado».
+            if (!settings.obsSource) {
+                const guess = result.sources.find((s) => /veado/i.test(s.name));
+                if (guess) { settings.obsSource = guess.name; scheduleSave(); }
+            }
+        } else {
+            obsSources = null;
+            if (obsSourceHintEl) obsSourceHintEl.textContent = result?.error || "Не удалось получить источники OBS";
+        }
+        renderObsSources();
+    }
+
+    obsSourceEl?.addEventListener("change", () => {
+        settings.obsSource = obsSourceEl.value;
+        scheduleSave();
+    });
+
+    obsSourcesRefreshEl?.addEventListener("click", loadObsSources);
+
+    addRuleEl?.addEventListener("click", () => {
+        settings.rules.push({ id: window.crypto?.randomUUID?.() || String(Date.now()), type: "reward", rewardId: "", rewardTitle: "", minAmount: 0, state: "", effect: "shake", durationSec: 3 });
+        scheduleSave();
+        renderRules();
+        if (!rewards) loadRewards();
+    });
+
+    // Награды подгружаем, когда открывают страницу.
+    document.querySelector('.nav-item[data-page="veadotube"]')?.addEventListener("click", () => {
+        if (!rewards && status?.redemptionsScope) loadRewards();
+        api.getVeadoStatus().then(renderStatus).catch(() => {});
+    });
+
+    api.onVeadoStatus(renderStatus);
+    api.onTwitchLoginSuccess?.(() => { rewards = null; api.getVeadoStatus().then(renderStatus); });
+
+    api.getVeadoStatus().then((initial) => {
+        settings = JSON.parse(JSON.stringify(initial.settings || settings));
+        renderStatus(initial);
+    }).catch((error) => console.error("veadotube:", error));
+})();
 </script>
 <script>
 (async () => {

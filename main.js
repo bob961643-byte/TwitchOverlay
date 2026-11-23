@@ -118,6 +118,10 @@ const fs = require("fs");
 const crypto = require("crypto");
 const tmi = require("tmi.js");
 const WebSocket = require("ws");
+const { VeadotubeClient } = require("./veadotube");
+const { TwitchEventSub, REQUIRED_SCOPE: REDEMPTIONS_SCOPE } = require("./twitch-eventsub");
+const { ObsClient } = require("./obs-client");
+const { AvatarEffects, EFFECTS } = require("./avatar-effects");
 
 let mainWindow = null;
 let overlayWindow = null;
@@ -249,6 +253,7 @@ function closeApplication() {
     }
 
     obsDisconnect();
+    stopVeadoServices();
 
     if (overlayWindow && !overlayWindow.isDestroyed()) {
         try { saveOverlayBounds(); } catch {}
@@ -273,83 +278,86 @@ function closeApplication() {
    OBS WEBSOCKET
 ========================= */
 
+// Пароль OBS WebSocket хранится зашифрованным (как Twitch-токен)
+// и никогда не отправляется обратно в окно настроек.
 const obsSettingsFile = path.join(app.getPath("userData"), "obs-settings.json");
-const defaultObsSettings = { host: "127.0.0.1", port: 4455, password: "" };
-let obsSettings = loadJsonFile?.(obsSettingsFile, defaultObsSettings) || { ...defaultObsSettings };
-let obsSocket = null;
-let obsRequestId = 0;
-let obsConnected = false;
+const defaultObsSettings = { host: "127.0.0.1", port: 4455, autoConnect: false };
+let obsSettings = loadObsSettings();
+const obsClient = new ObsClient({ WebSocket });
+const avatarEffects = new AvatarEffects({ obs: obsClient });
+
+function encryptSecret(value) {
+    if (!value) return "";
+    if (safeStorage.isEncryptionAvailable()) {
+        return "enc:" + safeStorage.encryptString(value).toString("base64");
+    }
+    return "b64:" + Buffer.from(value, "utf8").toString("base64");
+}
+
+function decryptSecret(value) {
+    try {
+        const text = String(value || "");
+        if (text.startsWith("enc:")) return safeStorage.decryptString(Buffer.from(text.slice(4), "base64"));
+        if (text.startsWith("b64:")) return Buffer.from(text.slice(4), "base64").toString("utf8");
+    } catch (error) {
+        console.error("Не удалось расшифровать пароль OBS:", error?.message || error);
+    }
+    return "";
+}
+
+function loadObsSettings() {
+    const raw = loadJsonFile(obsSettingsFile, defaultObsSettings) || {};
+    const settings = {
+        host: String(raw.host || "127.0.0.1").trim() || "127.0.0.1",
+        port: Math.max(1, Math.min(65535, Number(raw.port) || 4455)),
+        autoConnect: Boolean(raw.autoConnect),
+        passwordSecret: String(raw.passwordSecret || "")
+    };
+    // Старые версии хранили пароль открытым текстом — шифруем его.
+    if (raw.password && !settings.passwordSecret) {
+        settings.passwordSecret = encryptSecret(String(raw.password));
+        saveJsonFile(obsSettingsFile, settings);
+    }
+    return settings;
+}
 
 function saveObsSettings() {
-    try { fs.writeFileSync(obsSettingsFile, JSON.stringify(obsSettings, null, 4), "utf8"); return true; }
-    catch (error) { console.error("Ошибка сохранения OBS настроек:", error); return false; }
+    return saveJsonFile(obsSettingsFile, obsSettings);
+}
+
+function publicObsSettings() {
+    return {
+        host: obsSettings.host,
+        port: obsSettings.port,
+        autoConnect: obsSettings.autoConnect,
+        hasPassword: Boolean(obsSettings.passwordSecret)
+    };
 }
 
 function sendObsStatus() {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send("obs-status", { connected: obsConnected, host: obsSettings.host, port: obsSettings.port });
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send("obs-status", obsClient.getStatus());
     }
 }
 
 function obsDisconnect() {
-    obsConnected = false;
-    if (obsSocket) {
-        try { obsSocket.close(); } catch {}
-        obsSocket = null;
-    }
-    sendObsStatus();
+    obsClient.disconnect();
 }
 
 function obsConnect() {
-    return new Promise((resolve) => {
-        obsDisconnect();
-        const host = String(obsSettings.host || "127.0.0.1").trim() || "127.0.0.1";
-        const port = Math.max(1, Math.min(65535, Number(obsSettings.port) || 4455));
-        obsSettings.host = host;
-        obsSettings.port = port;
-        saveObsSettings();
-
-        let settled = false;
-        const finish = (result) => { if (settled) return; settled = true; resolve(result); };
-        try {
-            const ws = new WebSocket(`ws://${host}:${port}`);
-            obsSocket = ws;
-            ws.once("open", () => {});
-            ws.on("message", (raw) => {
-                let packet;
-                try { packet = JSON.parse(raw.toString()); } catch { return; }
-                if (packet.op === 0) {
-                    const d = packet.d || {};
-                    const identify = { rpcVersion: 1 };
-                    if (d.authentication && obsSettings.password) {
-                        const secret = crypto.createHash("sha256").update(String(obsSettings.password) + d.authentication.salt).digest("base64");
-                        const auth = crypto.createHash("sha256").update(secret + d.authentication.challenge).digest("base64");
-                        identify.authentication = auth;
-                    }
-                    ws.send(JSON.stringify({ op: 1, d: identify }));
-                } else if (packet.op === 2) {
-                    obsConnected = true;
-                    finish({ success: true });
-                    sendObsStatus();
-                } else if (packet.op === 7 && packet.d?.requestType === "GetVersion") {
-                    if (packet.d.requestStatus?.result === true) {
-                        obsConnected = true;
-                        finish({ success: true });
-                    } else {
-                        finish({ success: false, error: packet.d.requestStatus?.comment || "OBS запрос отклонён" });
-                    }
-                } else if (packet.op === 9) {
-                    // Negotiated event batch; no action needed for the basic connection.
-                }
-            });
-            ws.on("error", (error) => { obsConnected = false; sendObsStatus(); finish({ success: false, error: error?.message || "Не удалось подключиться к OBS" }); });
-            ws.on("close", () => { obsConnected = false; if (obsSocket === ws) obsSocket = null; sendObsStatus(); });
-            setTimeout(() => finish({ success: false, error: "Время ожидания OBS истекло" }), 5000);
-        } catch (error) {
-            finish({ success: false, error: error?.message || String(error) });
-        }
+    obsClient.configure({
+        host: obsSettings.host,
+        port: obsSettings.port,
+        password: decryptSecret(obsSettings.passwordSecret)
     });
+    obsClient.connect();
+    return { success: true, status: obsClient.getStatus() };
 }
+
+obsClient.on("status", () => {
+    sendObsStatus();
+    sendVeadoStatus();
+});
 
 /* =========================
    OBS BROWSER SOURCE
@@ -621,6 +629,10 @@ async function validateTwitchToken(options = {}) {
             twitchToken.expiresIn = Number(data.expires_in);
         }
 
+        if (Array.isArray(data.scopes)) {
+            twitchToken.scopes = data.scopes;
+        }
+
         saveTwitchToken(twitchToken);
         twitchSessionState = "valid";
         return true;
@@ -665,8 +677,9 @@ async function startTwitchLogin() {
                             client_id:
                                 CLIENT_ID,
 
+                            // channel:read:redemptions — награды за баллы для veadotube.
                             scopes:
-                                "chat:read chat:edit"
+                                "chat:read chat:edit channel:read:redemptions"
 
                         })
                 }
@@ -829,6 +842,10 @@ async function pollTwitchToken(
             saveTwitchToken(twitchToken);
             await validateTwitchToken();
             restartAutoChatStatusCheck();
+
+            // Новый вход мог выдать разрешение на награды — переподключаем EventSub.
+            twitchEventSub.stop();
+            syncVeadoServices();
 
             if (mainWindow) {
 
@@ -2280,6 +2297,9 @@ async function connectToTwitchChat(
 
         });
 
+    // Биты, подписки и рейды переключают аватар в veadotube mini.
+    attachVeadoChatEvents(twitchClient);
+
 
     twitchClient.on(
         "connected",
@@ -2734,6 +2754,8 @@ ipcMain.on(
         await disconnectFromTwitchChat();
 
         deleteTwitchToken();
+        twitchEventSub.stop();
+        sendVeadoStatus();
 
 
         if (mainWindow) {
@@ -3785,17 +3807,362 @@ ipcMain.on("profiles-delete", (event, name) => {
 });
 
 
-ipcMain.handle("obs-get-settings", () => obsSettings);
+ipcMain.handle("obs-get-settings", () => ({ ...publicObsSettings(), status: obsClient.getStatus() }));
 ipcMain.on("obs-set-settings", (_event, incoming) => {
-    if (incoming && typeof incoming === "object") obsSettings = { ...obsSettings, ...incoming };
-    obsSettings.host = String(obsSettings.host || "127.0.0.1").trim() || "127.0.0.1";
-    obsSettings.port = Math.max(1, Math.min(65535, Number(obsSettings.port) || 4455));
-    obsSettings.password = String(obsSettings.password || "");
+    if (!incoming || typeof incoming !== "object") return;
+    obsSettings.host = String(incoming.host || obsSettings.host || "127.0.0.1").trim() || "127.0.0.1";
+    obsSettings.port = Math.max(1, Math.min(65535, Number(incoming.port) || obsSettings.port || 4455));
+    if (typeof incoming.autoConnect === "boolean") obsSettings.autoConnect = incoming.autoConnect;
+    // Пустое поле пароля означает «оставить сохранённый»; clearPassword — удалить.
+    if (incoming.clearPassword) {
+        obsSettings.passwordSecret = "";
+    } else if (typeof incoming.password === "string" && incoming.password) {
+        obsSettings.passwordSecret = encryptSecret(incoming.password);
+    }
     saveObsSettings();
     sendObsStatus();
 });
-ipcMain.handle("obs-connect", () => obsConnect());
-ipcMain.handle("obs-disconnect", () => { obsDisconnect(); return { success: true }; });
+// Подключение запоминается: при следующем запуске оверлей подключится к OBS сам.
+ipcMain.handle("obs-connect", () => {
+    obsSettings.autoConnect = true;
+    saveObsSettings();
+    return obsConnect();
+});
+ipcMain.handle("obs-disconnect", () => {
+    obsSettings.autoConnect = false;
+    saveObsSettings();
+    obsDisconnect();
+    return { success: true, status: obsClient.getStatus() };
+});
+ipcMain.handle("obs-list-sources", async () => {
+    try {
+        return { success: true, ...(await avatarEffects.listSources()) };
+    } catch (error) {
+        return { success: false, error: error?.message || String(error) };
+    }
+});
+
+
+/* =========================
+   VEADOTUBE MINI: РЕАКЦИИ АВАТАРА
+   Награды за баллы, биты, подписки и рейды на время включают
+   выбранное состояние аватара в veadotube mini.
+========================= */
+
+const veadoSettingsFile = path.join(app.getPath("userData"), "veadotube-settings.json");
+const VEADO_TRIGGER_TYPES = ["reward", "bits", "sub", "giftsub", "raid"];
+const defaultVeadoSettings = { enabled: true, obsSource: "", handImage: "", headOffset: 0.1, rules: [] };
+
+function normalizeVeadoRule(rule) {
+    const type = VEADO_TRIGGER_TYPES.includes(rule?.type) ? rule.type : "reward";
+    return {
+        id: String(rule?.id || crypto.randomUUID()),
+        type,
+        rewardId: String(rule?.rewardId || ""),
+        rewardTitle: String(rule?.rewardTitle || ""),
+        // Порог: минимум битов, зрителей рейда или подарочных подписок.
+        minAmount: Math.max(0, Math.floor(Number(rule?.minAmount) || 0)),
+        // Состояние veadotube (необязательно) и/или эффект источника в OBS.
+        state: String(rule?.state || ""),
+        effect: EFFECTS[rule?.effect] ? rule.effect : "",
+        durationSec: Math.max(1, Math.min(600, Number(rule?.durationSec) || 5))
+    };
+}
+
+function normalizeVeadoSettings(settings) {
+    return {
+        enabled: settings?.enabled !== false,
+        // Имя источника veadotube в сцене OBS, который анимируют эффекты.
+        obsSource: String(settings?.obsSource || ""),
+        // Своя картинка руки (пусто — встроенная) и где у аватара голова:
+        // доля высоты источника от верхнего края.
+        handImage: String(settings?.handImage || ""),
+        headOffset: Math.max(0, Math.min(0.6, Number(settings?.headOffset ?? 0.1) || 0)),
+        rules: Array.isArray(settings?.rules) ? settings.rules.slice(0, 100).map(normalizeVeadoRule) : []
+    };
+}
+
+let veadoSettings = normalizeVeadoSettings(loadJsonFile(veadoSettingsFile, defaultVeadoSettings));
+
+const veadotube = new VeadotubeClient({ WebSocket, clientName: "Twitch Overlay" });
+
+async function getEventSubAuth() {
+    if (!twitchToken?.accessToken) return null;
+    if (!twitchToken.userId || !Array.isArray(twitchToken.scopes)) {
+        await validateTwitchToken();
+    }
+    return twitchToken?.accessToken
+        ? { accessToken: twitchToken.accessToken, userId: twitchToken.userId, scopes: twitchToken.scopes }
+        : null;
+}
+
+const twitchEventSub = new TwitchEventSub({
+    WebSocket,
+    clientId: CLIENT_ID,
+    getAuth: async ({ forceValidate = false } = {}) => {
+        // После 401 от Twitch API токен мог истечь — проверяем и обновляем его.
+        if (forceValidate || (twitchToken?.accessToken && twitchSessionState !== "valid")) {
+            await validateTwitchToken();
+        }
+        return getEventSubAuth();
+    }
+});
+
+function hasRedemptionsScope() {
+    return Array.isArray(twitchToken?.scopes) && twitchToken.scopes.includes(REDEMPTIONS_SCOPE);
+}
+
+function getVeadoStatus() {
+    return {
+        settings: veadoSettings,
+        veadotube: veadotube.getStatus(),
+        obs: obsClient.getStatus(),
+        effects: AvatarEffects.list(),
+        queueLength: reactionQueue.length + (reactionActive ? 1 : 0),
+        eventSub: twitchEventSub.getStatus(),
+        twitchLoggedIn: Boolean(twitchToken?.accessToken),
+        redemptionsScope: hasRedemptionsScope()
+    };
+}
+
+function sendVeadoStatus() {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send("veado-status", getVeadoStatus());
+    }
+}
+
+veadotube.on("status", sendVeadoStatus);
+twitchEventSub.on("status", sendVeadoStatus);
+
+// veadotube и EventSub работают, только пока интеграция включена;
+// EventSub нужен лишь при наличии реакций на награды.
+function syncVeadoServices() {
+    if (veadoSettings.enabled) {
+        veadotube.start();
+    } else {
+        veadotube.stop();
+    }
+
+    const needsRewards = veadoSettings.enabled && veadoSettings.rules.some((r) => r.type === "reward");
+    if (needsRewards && twitchToken?.accessToken) {
+        if (!twitchEventSub.running) twitchEventSub.start().catch((e) => console.error("EventSub:", e));
+    } else if (twitchEventSub.running || twitchEventSub.state !== "off") {
+        twitchEventSub.stop();
+    }
+
+    sendVeadoStatus();
+}
+
+function stopVeadoServices() {
+    try { twitchEventSub.stop(); } catch {}
+    try { veadotube.stop(); } catch {}
+}
+
+// Из подходящих по типу правил с порогом выбираем самое «дорогое».
+function pickVeadoRule(type, amount = 0, rewardId = "") {
+    if (!veadoSettings.enabled) return null;
+    const candidates = veadoSettings.rules.filter((rule) => {
+        if (rule.type !== type || (!rule.state && !rule.effect)) return false;
+        if (type === "reward") return rule.rewardId && rule.rewardId === rewardId;
+        return amount >= rule.minAmount;
+    });
+    candidates.sort((a, b) => b.minAmount - a.minAmount);
+    return candidates[0] || null;
+}
+
+/* ---------- картинка руки ----------
+   OBS читает картинку с диска, а в собранной программе assets лежат внутри
+   app.asar — поэтому встроенную руку копируем в папку данных программы. */
+
+function getHandImagePath() {
+    const custom = veadoSettings.handImage;
+    if (custom && fs.existsSync(custom)) return custom;
+
+    const bundled = path.join(__dirname, "assets", "hand.png");
+    const target = path.join(app.getPath("userData"), "hand.png");
+    try {
+        const source = fs.readFileSync(bundled);
+        const current = fs.existsSync(target) ? fs.readFileSync(target) : null;
+        if (!current || !current.equals(source)) fs.writeFileSync(target, source);
+        return target;
+    } catch (error) {
+        console.error("Не удалось подготовить картинку руки:", error?.message || error);
+        return "";
+    }
+}
+
+/* ---------- общая очередь реакций ----------
+   Реакция одновременно держит состояние veadotube и проигрывает эффект в OBS.
+   Реакции идут строго по одной, чтобы эффекты не накладывались. */
+
+const REACTION_QUEUE_LIMIT = 20;
+const REACTION_GAP_MS = 400;
+const reactionQueue = [];
+let reactionActive = null;
+
+function enqueueAvatarReaction({ state = "", effect = "", durationSec = 5, label = "" }) {
+    if (!state && !effect) return { success: false, error: "Выберите состояние аватара или эффект" };
+    if (state && !veadotube.connected && (!effect || !obsClient.connected)) {
+        return { success: false, error: "veadotube mini не подключён" };
+    }
+    if (!state && effect && !obsClient.connected) return { success: false, error: "OBS не подключён" };
+    if (effect && !veadoSettings.obsSource) return { success: false, error: "Выберите источник аватара в OBS" };
+    if (reactionQueue.length >= REACTION_QUEUE_LIMIT) return { success: false, error: "Очередь реакций переполнена" };
+
+    reactionQueue.push({ state, effect, durationMs: Math.max(1, Number(durationSec) || 5) * 1000, label });
+    sendVeadoStatus();
+    processAvatarReactions();
+    return { success: true };
+}
+
+async function processAvatarReactions() {
+    if (reactionActive) return;
+    while (reactionQueue.length) {
+        reactionActive = reactionQueue.shift();
+        sendVeadoStatus();
+        const { state, effect, durationMs, label } = reactionActive;
+        try {
+            const tasks = [];
+            if (state) tasks.push(veadotube.holdState(state, durationMs));
+            if (effect) {
+                const options = { headOffset: veadoSettings.headOffset };
+                if (EFFECTS[effect]?.hand) options.handImage = getHandImagePath();
+                tasks.push(avatarEffects.play(effect, durationMs, veadoSettings.obsSource, options).then((result) => {
+                    if (!result.success) console.log(`OBS: эффект «${effect}» для «${label}» пропущен — ${result.error}`);
+                }));
+            }
+            await Promise.all(tasks);
+        } catch (error) {
+            console.error("Ошибка реакции аватара:", error?.message || error);
+        }
+        await new Promise((resolve) => setTimeout(resolve, REACTION_GAP_MS));
+    }
+    reactionActive = null;
+    sendVeadoStatus();
+}
+
+function triggerVeadoReaction(type, { amount = 0, rewardId = "", label = "" } = {}) {
+    const rule = pickVeadoRule(type, amount, rewardId);
+    if (!rule) return;
+    const result = enqueueAvatarReaction({ state: rule.state, effect: rule.effect, durationSec: rule.durationSec, label });
+    const what = [rule.state && `«${rule.state}»`, rule.effect && EFFECTS[rule.effect]?.label].filter(Boolean).join(" + ");
+    if (!result.success) {
+        console.log(`Реакция аватара «${label}» пропущена — ${result.error}`);
+    } else {
+        console.log(`Реакция аватара: ${label} → ${what} на ${rule.durationSec} с`);
+    }
+}
+
+twitchEventSub.on("redemption", (redemption) => {
+    triggerVeadoReaction("reward", {
+        rewardId: redemption.rewardId,
+        label: `награда «${redemption.rewardTitle}» от ${redemption.userName}`
+    });
+});
+
+// Подарочные подписки: «таинственный» подарок на N подписок Twitch присылает
+// одним submysterygift и затем N отдельными subgift — реагируем один раз.
+const veadoMysteryGifts = new Map();
+
+function handleVeadoGiftSub(gifter, count, isMystery) {
+    const key = String(gifter || "").toLowerCase();
+    const now = Date.now();
+    if (isMystery) {
+        veadoMysteryGifts.set(key, { until: now + 15000, left: count });
+        triggerVeadoReaction("giftsub", { amount: count, label: `${count} подарочных подписок от ${gifter}` });
+        return;
+    }
+    const mystery = veadoMysteryGifts.get(key);
+    if (mystery && mystery.until > now && mystery.left > 0) {
+        mystery.left--;
+        return;
+    }
+    veadoMysteryGifts.delete(key);
+    triggerVeadoReaction("giftsub", { amount: 1, label: `подарочная подписка от ${gifter}` });
+}
+
+function attachVeadoChatEvents(client) {
+    client.on("cheer", (_channel, userstate) => {
+        const bits = Number(userstate?.bits) || 0;
+        triggerVeadoReaction("bits", { amount: bits, label: `${bits} битов от ${userstate?.["display-name"] || userstate?.username || "зрителя"}` });
+    });
+    client.on("subscription", (_channel, username) => {
+        triggerVeadoReaction("sub", { label: `подписка ${username}` });
+    });
+    client.on("resub", (_channel, username) => {
+        triggerVeadoReaction("sub", { label: `продление подписки ${username}` });
+    });
+    client.on("subgift", (_channel, username) => {
+        handleVeadoGiftSub(username, 1, false);
+    });
+    client.on("submysterygift", (_channel, username, numbOfSubs) => {
+        handleVeadoGiftSub(username, Number(numbOfSubs) || 1, true);
+    });
+    client.on("raided", (_channel, username, viewers) => {
+        const count = Number(viewers) || 0;
+        triggerVeadoReaction("raid", { amount: count, label: `рейд ${username} (${count} зрителей)` });
+    });
+}
+
+ipcMain.handle("veado-get-status", () => getVeadoStatus());
+
+ipcMain.handle("veado-set-settings", (_event, incoming) => {
+    veadoSettings = normalizeVeadoSettings(incoming);
+    saveJsonFile(veadoSettingsFile, veadoSettings);
+    syncVeadoServices();
+    return getVeadoStatus();
+});
+
+ipcMain.handle("veado-refresh-states", async () => {
+    try {
+        await veadotube.refreshStates();
+        return { success: true, status: getVeadoStatus() };
+    } catch (error) {
+        return { success: false, error: error?.message || String(error), status: getVeadoStatus() };
+    }
+});
+
+ipcMain.handle("veado-test", (_event, { state, effect, durationSec } = {}) => {
+    return enqueueAvatarReaction({
+        state: String(state || ""),
+        effect: EFFECTS[effect] ? effect : "",
+        durationSec: Number(durationSec) || 3,
+        label: "проверка"
+    });
+});
+
+ipcMain.handle("veado-pick-hand-image", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        title: "Картинка руки",
+        properties: ["openFile"],
+        filters: [{ name: "Картинки", extensions: ["png", "gif", "webp", "jpg", "jpeg"] }]
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { success: false, canceled: true };
+    veadoSettings = normalizeVeadoSettings({ ...veadoSettings, handImage: result.filePaths[0] });
+    saveJsonFile(veadoSettingsFile, veadoSettings);
+    sendVeadoStatus();
+    return { success: true, status: getVeadoStatus() };
+});
+
+ipcMain.handle("veado-get-rewards", async () => {
+    if (!twitchToken?.accessToken) {
+        return { success: false, error: "Сначала войдите в Twitch" };
+    }
+    if (!hasRedemptionsScope()) {
+        return { success: false, needsRelogin: true, error: "Войдите в Twitch заново, чтобы разрешить чтение наград" };
+    }
+    try {
+        return { success: true, rewards: await twitchEventSub.getRewards() };
+    } catch (error) {
+        const notAffiliate = error?.status === 403;
+        return {
+            success: false,
+            error: notAffiliate
+                ? "Twitch не отдаёт награды: баллы канала есть только у компаньонов и партнёров"
+                : (error?.message || String(error))
+        };
+    }
+});
 
 /* =========================
    AUTO CHAT STATUS
@@ -3900,6 +4267,8 @@ app.whenReady().then(
         }
 
         restartAutoChatStatusCheck();
+        syncVeadoServices();
+        if (obsSettings.autoConnect) obsConnect();
 
 
         app.on(
@@ -4021,6 +4390,7 @@ app.on("before-quit", () => {
         try { client.disconnect().catch(() => {}); } catch {}
     }
     obsDisconnect();
+    stopVeadoServices();
     if (overlayWindow && !overlayWindow.isDestroyed()) {
         try { overlayWindow.destroy(); } catch {}
     }
