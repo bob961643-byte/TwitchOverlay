@@ -92,6 +92,8 @@ autoUpdater.on("update-downloaded", (info) => {
     // close the app, run the NSIS update and relaunch the new version.
     setTimeout(() => {
         try {
+            // Настоящий выход: окно не должно уходить в трей при установке обновления.
+            app.isQuitting = true;
             autoUpdater.quitAndInstall(false, true);
         } catch (error) {
             updateInstallScheduled = false;
@@ -187,10 +189,38 @@ function createTray() {
             }
         ]));
 
+        tray.on("click", () => showSettingsWindow());
         tray.on("double-click", () => showSettingsWindow());
     } catch (error) {
         console.error("Ошибка создания значка в области уведомлений:", error);
         tray = null;
+    }
+}
+
+let trayHintShown = false;
+
+function hideToTray() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    createTray();
+
+    // Если значок в трее создать не удалось, просто сворачиваем окно,
+    // чтобы программа не «пропала» без возможности вернуть её.
+    if (!tray) {
+        mainWindow.minimize();
+        return;
+    }
+
+    mainWindow.hide();
+
+    if (!trayHintShown && process.platform === "win32") {
+        trayHintShown = true;
+        try {
+            tray.displayBalloon({
+                title: "Twitch Overlay",
+                content: "Программа свёрнута в трей. Закрыть её можно через меню значка."
+            });
+        } catch {}
     }
 }
 
@@ -2655,7 +2685,9 @@ ipcMain.on(
     "window-close",
     () => {
 
-        closeApplication();
+        // Крестик не закрывает программу, а сворачивает её в трей.
+        // Полный выход — пункт «Закрыть программу» в меню значка.
+        hideToTray();
 
     }
 );
@@ -3952,7 +3984,13 @@ function createWindow() {
     );
 
 
-    mainWindow.on("close", () => {
+    mainWindow.on("close", (event) => {
+        // Alt+F4 / закрытие с панели задач тоже уводит в трей.
+        if (!app.isQuitting && tray) {
+            event.preventDefault();
+            hideToTray();
+            return;
+        }
         if (!app.isQuitting) {
             closeApplication();
         }
