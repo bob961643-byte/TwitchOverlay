@@ -21,7 +21,8 @@ const EFFECTS = {
     grow: { label: "Раздуться" },
     shrink: { label: "Сжаться" },
     pat: { label: "Погладить по голове", hand: true, minSec: 1.6 },
-    drag: { label: "Утащить за кадр", hand: true, minSec: 3.2 }
+    // Минимум покрывает самый длинный путь через весь экран (рывок 1,5 с + пробежка 2 с).
+    drag: { label: "Утащить за кадр", hand: true, minSec: 4.5 }
 };
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -121,25 +122,26 @@ function patFrame(t, T, ctx) {
     };
 }
 
-// Утащить: рука хватает за голову, тащит аватара за ближний край экрана,
+// Утащить: рука хватает за голову, тащит аватара за дальний край экрана,
 // аватар какое-то время отсутствует и прибегает обратно вприпрыжку.
 function dragFrame(t, T, ctx) {
     const { hand, box, cx, canvas, dir } = ctx;
     const a = handAnchors(ctx);
+    // Насколько сдвинуть аватар, чтобы он целиком ушёл за край вместе с рукой.
+    const reach = Math.max(box.w, box.h) * 0.75 + hand.w;
+    const distance = dir > 0 ? canvas.w - cx + reach : cx + reach;
+    const lift = -box.h * 0.1;
+
+    // Чем дальше тащить, тем дольше рывок и обратная пробежка.
     const tIn = 0.45;
     const tGrab = 0.3;
-    const tPull = 0.9;
-    const tBack = 1.3;
+    const tPull = Math.max(0.9, Math.min(1.5, distance / 1400));
+    const tBack = Math.max(1.3, Math.min(2.0, distance / 1100));
     const tAway = Math.max(0.2, T - tIn - tGrab - tPull - tBack);
     const t1 = tIn;
     const t2 = t1 + tGrab;
     const t3 = t2 + tPull;
     const t4 = t3 + tAway;
-
-    // Насколько сдвинуть аватар, чтобы он целиком ушёл за край вместе с рукой.
-    const reach = Math.max(box.w, box.h) * 0.75 + hand.w;
-    const distance = dir > 0 ? canvas.w - cx + reach : cx + reach;
-    const lift = -box.h * 0.1;
 
     if (t < t1) {
         const u = easeOut(clamp01(t / tIn));
@@ -362,8 +364,8 @@ class AvatarEffects {
             cx,
             cy,
             canvas,
-            // Тащим к ближнему краю; там же и рука немного наклонена.
-            dir: cx > canvas.w / 2 ? 1 : -1,
+            // Тащим к дальнему краю — через весь экран; туда же наклонена рука.
+            dir: cx > canvas.w / 2 ? -1 : 1,
             headOffset: Math.max(0, Math.min(0.6, Number(options.headOffset) || 0.1)),
             hand: { w: 0, h: 0 }
         };
