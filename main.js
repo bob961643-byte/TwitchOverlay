@@ -3878,7 +3878,7 @@ ipcMain.handle("obs-list-sources", async () => {
 
 const veadoSettingsFile = path.join(app.getPath("userData"), "veadotube-settings.json");
 const VEADO_TRIGGER_TYPES = ["reward", "bits", "sub", "giftsub", "raid"];
-const defaultVeadoSettings = { enabled: true, obsSource: "", handImage: "", headOffset: 0.1, rules: [] };
+const defaultVeadoSettings = { enabled: true, obsSource: "", handImage: "", headOffset: 0.1, feetOffset: 0.04, rules: [] };
 
 function normalizeVeadoRule(rule) {
     const type = VEADO_TRIGGER_TYPES.includes(rule?.type) ? rule.type : "reward";
@@ -3905,6 +3905,8 @@ function normalizeVeadoSettings(settings) {
         // доля высоты источника от верхнего края.
         handImage: String(settings?.handImage || ""),
         headOffset: Math.max(0, Math.min(0.6, Number(settings?.headOffset ?? 0.1) || 0)),
+        // Где ноги (за них рука держит снизу): доля высоты от нижнего края.
+        feetOffset: Math.max(0, Math.min(0.6, Number(settings?.feetOffset ?? 0.04) || 0)),
         rules: Array.isArray(settings?.rules) ? settings.rules.slice(0, 100).map(normalizeVeadoRule) : []
     };
 }
@@ -4052,7 +4054,7 @@ async function processAvatarReactions() {
             const tasks = [];
             if (state) tasks.push(veadotube.holdState(state, durationMs));
             if (effect) {
-                const options = { headOffset: veadoSettings.headOffset };
+                const options = { headOffset: veadoSettings.headOffset, feetOffset: veadoSettings.feetOffset };
                 if (EFFECTS[effect]?.hand) options.handImage = getHandImagePath();
                 tasks.push(avatarEffects.play(effect, durationMs, veadoSettings.obsSource, options).then((result) => {
                     if (!result.success) console.log(`OBS: эффект «${effect}» для «${label}» пропущен — ${result.error}`);

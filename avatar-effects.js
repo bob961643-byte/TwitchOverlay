@@ -127,7 +127,11 @@ function patFrame(t, T, ctx) {
 // Точка, где рука снизу (пальцами вверх) держит ноги, и точка за нижним краем.
 function feetAnchors(ctx) {
     const { box, cx, cy, hand, canvas } = ctx;
-    const feetY = cy + box.h / 2 - box.h * 0.04;
+    // Низ аватара, но не ниже точки, где над краем кадра ещё видна ладонь:
+    // если аватар стоит в углу и ноги за экраном, рука хватает у края.
+    const base = Math.min(cy + box.h / 2, canvas.h - hand.h * 0.3);
+    // Ползунок «Где ноги» поднимает точку хвата от этой базы.
+    const feetY = base - box.h * ctx.feetOffset;
     return {
         restX: cx,
         // Кончики пальцев заходят на ноги на 18% высоты руки.
@@ -351,6 +355,7 @@ class AvatarEffects {
      * Ошибки OBS не пробрасываются наружу — эффект просто пропускается.
      * options.handImage — абсолютный путь к PNG руки (для эффектов с рукой).
      * options.headOffset — где голова: доля высоты аватара от верхнего края.
+     * options.feetOffset — где ноги: доля высоты аватара от нижнего края.
      */
     async play(effect, durationMs, sourceName, options = {}) {
         const spec = EFFECTS[effect];
@@ -484,7 +489,8 @@ class AvatarEffects {
             // Куда наклонена рука при поглаживании; сторона «Утащить» — случайная.
             dir: cx > canvas.w / 2 ? -1 : 1,
             dragWay: effect === "drag" ? (options.dragWay || this.pickDragWay()) : null,
-            headOffset: Math.max(0, Math.min(0.6, Number(options.headOffset) || 0.1)),
+            headOffset: Math.max(0, Math.min(0.6, Number(options.headOffset ?? 0.1) || 0)),
+            feetOffset: Math.max(0, Math.min(0.6, Number(options.feetOffset ?? 0.04) || 0)),
             hand: { w: 0, h: 0 }
         };
 

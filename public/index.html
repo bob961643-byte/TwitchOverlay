@@ -1552,6 +1552,16 @@ copyObsBrowserSourceUrl?.addEventListener("click", async () => {
             <span class="setting-description" id="veadoHeadOffsetValue">10%</span>
         </div>
     </div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">Где ноги</div>
+            <div class="setting-description">За что хватает рука снизу: отступ от низа источника аватара. Если ноги за краем экрана, рука сама поднимется до края кадра</div>
+        </div>
+        <div class="veado-actions">
+            <input class="range" id="veadoFeetOffset" type="range" min="0" max="60" step="1" value="4" style="width:180px;">
+            <span class="setting-description" id="veadoFeetOffsetValue">4%</span>
+        </div>
+    </div>
 </div>
 
 <div class="section">
@@ -3227,19 +3237,31 @@ if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(ap
     const resetHandEl = el("veadoResetHand");
     const headOffsetEl = el("veadoHeadOffset");
     const headOffsetValueEl = el("veadoHeadOffsetValue");
+    const feetOffsetEl = el("veadoFeetOffset");
+    const feetOffsetValueEl = el("veadoFeetOffsetValue");
     let obsSources = null;
+
+    // Ползунки «Где голова» / «Где ноги»: 0–60% высоты аватара.
+    const offsetSliders = [
+        { input: headOffsetEl, value: headOffsetValueEl, key: "headOffset", fallback: 0.1 },
+        { input: feetOffsetEl, value: feetOffsetValueEl, key: "feetOffset", fallback: 0.04 }
+    ];
+
+    function showOffset(slider, percent) {
+        slider.input.value = String(percent);
+        slider.input.style.setProperty("--value", `${(percent / 60) * 100}%`);
+        slider.value.textContent = `${percent}%`;
+    }
 
     function renderHandSettings() {
         const custom = settings.handImage || "";
         handNameEl.textContent = custom ? custom.split(/[\\/]/).pop() : "Встроенная рука";
         handNameEl.title = custom;
         resetHandEl.hidden = !custom;
-        if (document.activeElement !== headOffsetEl) {
-            const percent = Math.round((settings.headOffset ?? 0.1) * 100);
-            headOffsetEl.value = String(percent);
-            headOffsetEl.style.setProperty("--value", `${(percent / 60) * 100}%`);
-            headOffsetValueEl.textContent = `${percent}%`;
-        }
+        offsetSliders.forEach((slider) => {
+            if (!slider.input || document.activeElement === slider.input) return;
+            showOffset(slider, Math.round((settings[slider.key] ?? slider.fallback) * 100));
+        });
     }
 
     pickHandEl?.addEventListener("click", async () => {
@@ -3256,12 +3278,13 @@ if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(ap
         renderHandSettings();
     });
 
-    headOffsetEl?.addEventListener("input", () => {
-        const percent = Number(headOffsetEl.value) || 0;
-        settings.headOffset = percent / 100;
-        headOffsetEl.style.setProperty("--value", `${(percent / 60) * 100}%`);
-        headOffsetValueEl.textContent = `${percent}%`;
-        scheduleSave();
+    offsetSliders.forEach((slider) => {
+        slider.input?.addEventListener("input", () => {
+            const percent = Number(slider.input.value) || 0;
+            settings[slider.key] = percent / 100;
+            showOffset(slider, percent);
+            scheduleSave();
+        });
     });
 
     const TRIGGERS = [
