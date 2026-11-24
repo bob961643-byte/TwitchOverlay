@@ -3878,7 +3878,36 @@ ipcMain.handle("obs-list-sources", async () => {
 
 const veadoSettingsFile = path.join(app.getPath("userData"), "veadotube-settings.json");
 const VEADO_TRIGGER_TYPES = ["reward", "bits", "sub", "giftsub", "raid"];
-const defaultVeadoSettings = { enabled: true, obsSource: "", handImage: "", headOffset: 0.1, feetOffset: 0.04, rules: [] };
+const defaultVeadoSettings = { enabled: true, obsSource: "", handImage: "", headOffset: 0.1, feetOffset: 0.04, customItems: [], rules: [] };
+
+// Готовые предметы для эффекта «Бросить предмет» (картинки в assets/items).
+const BUILTIN_THROW_ITEMS = [
+    { id: "tomato", label: "Помидор" },
+    { id: "ball", label: "Мяч" },
+    { id: "slipper", label: "Тапок" },
+    { id: "fish", label: "Рыбка" },
+    { id: "pillow", label: "Подушка" },
+    { id: "heart", label: "Сердечко" }
+];
+
+// «random» — случайный из всех; «custom:<id>» — своя картинка из настроек.
+function normalizeThrowItem(value) {
+    const id = String(value || "random");
+    if (id === "random" || id.startsWith("custom:")) return id;
+    return BUILTIN_THROW_ITEMS.some((item) => item.id === id) ? id : "random";
+}
+
+function normalizeCustomItems(list) {
+    if (!Array.isArray(list)) return [];
+    return list
+        .filter((item) => item && typeof item.path === "string" && item.path)
+        .slice(0, 50)
+        .map((item) => ({
+            id: String(item.id || crypto.randomUUID()),
+            name: String(item.name || path.parse(item.path).name).slice(0, 60),
+            path: item.path
+        }));
+}
 
 function normalizeVeadoRule(rule) {
     const type = VEADO_TRIGGER_TYPES.includes(rule?.type) ? rule.type : "reward";
@@ -3892,6 +3921,8 @@ function normalizeVeadoRule(rule) {
         // Состояние veadotube (необязательно) и/или эффект источника в OBS.
         state: String(rule?.state || ""),
         effect: EFFECTS[rule?.effect] ? rule.effect : "",
+        // Что бросать для эффекта «Бросить предмет».
+        throwItem: normalizeThrowItem(rule?.throwItem),
         durationSec: Math.max(1, Math.min(600, Number(rule?.durationSec) || 5))
     };
 }
@@ -3907,6 +3938,8 @@ function normalizeVeadoSettings(settings) {
         headOffset: Math.max(0, Math.min(0.6, Number(settings?.headOffset ?? 0.1) || 0)),
         // Где ноги (за них рука держит снизу): доля высоты от нижнего края.
         feetOffset: Math.max(0, Math.min(0.6, Number(settings?.feetOffset ?? 0.04) || 0)),
+        // Свои картинки для бросков: [{ id, name, path }].
+        customItems: normalizeCustomItems(settings?.customItems),
         rules: Array.isArray(settings?.rules) ? settings.rules.slice(0, 100).map(normalizeVeadoRule) : []
     };
 }
@@ -3944,6 +3977,7 @@ function hasRedemptionsScope() {
 function getVeadoStatus() {
     return {
         settings: veadoSettings,
+        throwItems: getThrowItemOptions(),
         veadotube: veadotube.getStatus(),
         obs: obsClient.getStatus(),
         effects: AvatarEffects.list(),
@@ -3999,25 +4033,58 @@ function pickVeadoRule(type, amount = 0, rewardId = "") {
     return candidates[0] || null;
 }
 
-/* ---------- картинка руки ----------
+/* ---------- картинки руки и предметов ----------
    OBS читает картинку с диска, а в собранной программе assets лежат внутри
-   app.asar — поэтому встроенную руку копируем в папку данных программы. */
+   app.asar — поэтому встроенные картинки копируем в папку данных программы. */
+
+function exportBundledImage(relativePath) {
+    const bundled = path.join(__dirname, "assets", relativePath);
+    const target = path.join(app.getPath("userData"), relativePath);
+    try {
+        const source = fs.readFileSync(bundled);
+        const current = fs.existsSync(target) ? fs.readFileSync(target) : null;
+        if (!current || !current.equals(source)) {
+            fs.mkdirSync(path.dirname(target), { recursive: true });
+            fs.writeFileSync(target, source);
+        }
+        return target;
+    } catch (error) {
+        console.error(`Не удалось подготовить картинку ${relativePath}:`, error?.message || error);
+        return "";
+    }
+}
 
 function getHandImagePath() {
     const custom = veadoSettings.handImage;
     if (custom && fs.existsSync(custom)) return custom;
+    return exportBundledImage("hand.png");
+}
 
-    const bundled = path.join(__dirname, "assets", "hand.png");
-    const target = path.join(app.getPath("userData"), "hand.png");
-    try {
-        const source = fs.readFileSync(bundled);
-        const current = fs.existsSync(target) ? fs.readFileSync(target) : null;
-        if (!current || !current.equals(source)) fs.writeFileSync(target, source);
-        return target;
-    } catch (error) {
-        console.error("Не удалось подготовить картинку руки:", error?.message || error);
-        return "";
+// Путь к картинке предмета для броска; «random» — любой готовый или свой.
+function getThrowItemImage(choice) {
+    let id = normalizeThrowItem(choice);
+    if (id === "random") {
+        const pool = [
+            ...BUILTIN_THROW_ITEMS.map((item) => item.id),
+            ...veadoSettings.customItems.filter((item) => fs.existsSync(item.path)).map((item) => `custom:${item.id}`)
+        ];
+        id = pool[Math.floor(Math.random() * pool.length)];
     }
+    if (id.startsWith("custom:")) {
+        const custom = veadoSettings.customItems.find((item) => `custom:${item.id}` === id);
+        if (custom && fs.existsSync(custom.path)) return custom.path;
+        console.log("Своя картинка предмета не найдена, бросаем помидор");
+        id = "tomato";
+    }
+    return exportBundledImage(path.join("items", `${id}.png`));
+}
+
+function getThrowItemOptions() {
+    return [
+        { id: "random", label: "Случайный предмет" },
+        ...BUILTIN_THROW_ITEMS,
+        ...veadoSettings.customItems.map((item) => ({ id: `custom:${item.id}`, label: item.name, custom: true }))
+    ];
 }
 
 /* ---------- общая очередь реакций ----------
@@ -4029,7 +4096,7 @@ const REACTION_GAP_MS = 400;
 const reactionQueue = [];
 let reactionActive = null;
 
-function enqueueAvatarReaction({ state = "", effect = "", durationSec = 5, label = "" }) {
+function enqueueAvatarReaction({ state = "", effect = "", throwItem = "random", durationSec = 5, label = "" }) {
     if (!state && !effect) return { success: false, error: "Выберите состояние аватара или эффект" };
     if (state && !veadotube.connected && (!effect || !obsClient.connected)) {
         return { success: false, error: "veadotube mini не подключён" };
@@ -4038,7 +4105,7 @@ function enqueueAvatarReaction({ state = "", effect = "", durationSec = 5, label
     if (effect && !veadoSettings.obsSource) return { success: false, error: "Выберите источник аватара в OBS" };
     if (reactionQueue.length >= REACTION_QUEUE_LIMIT) return { success: false, error: "Очередь реакций переполнена" };
 
-    reactionQueue.push({ state, effect, durationMs: Math.max(1, Number(durationSec) || 5) * 1000, label });
+    reactionQueue.push({ state, effect, throwItem, durationMs: Math.max(1, Number(durationSec) || 5) * 1000, label });
     sendVeadoStatus();
     processAvatarReactions();
     return { success: true };
@@ -4049,13 +4116,14 @@ async function processAvatarReactions() {
     while (reactionQueue.length) {
         reactionActive = reactionQueue.shift();
         sendVeadoStatus();
-        const { state, effect, durationMs, label } = reactionActive;
+        const { state, effect, throwItem, durationMs, label } = reactionActive;
         try {
             const tasks = [];
             if (state) tasks.push(veadotube.holdState(state, durationMs));
             if (effect) {
                 const options = { headOffset: veadoSettings.headOffset, feetOffset: veadoSettings.feetOffset };
                 if (EFFECTS[effect]?.hand) options.handImage = getHandImagePath();
+                if (EFFECTS[effect]?.item) options.itemImage = getThrowItemImage(throwItem);
                 tasks.push(avatarEffects.play(effect, durationMs, veadoSettings.obsSource, options).then((result) => {
                     if (!result.success) console.log(`OBS: эффект «${effect}» для «${label}» пропущен — ${result.error}`);
                 }));
@@ -4073,7 +4141,13 @@ async function processAvatarReactions() {
 function triggerVeadoReaction(type, { amount = 0, rewardId = "", label = "" } = {}) {
     const rule = pickVeadoRule(type, amount, rewardId);
     if (!rule) return;
-    const result = enqueueAvatarReaction({ state: rule.state, effect: rule.effect, durationSec: rule.durationSec, label });
+    const result = enqueueAvatarReaction({
+        state: rule.state,
+        effect: rule.effect,
+        throwItem: rule.throwItem,
+        durationSec: rule.durationSec,
+        label
+    });
     const what = [rule.state && `«${rule.state}»`, rule.effect && EFFECTS[rule.effect]?.label].filter(Boolean).join(" + ");
     if (!result.success) {
         console.log(`Реакция аватара «${label}» пропущена — ${result.error}`);
@@ -4151,13 +4225,44 @@ ipcMain.handle("veado-refresh-states", async () => {
     }
 });
 
-ipcMain.handle("veado-test", (_event, { state, effect, durationSec } = {}) => {
+ipcMain.handle("veado-test", (_event, { state, effect, throwItem, durationSec } = {}) => {
     return enqueueAvatarReaction({
         state: String(state || ""),
         effect: EFFECTS[effect] ? effect : "",
+        throwItem: normalizeThrowItem(throwItem),
         durationSec: Number(durationSec) || 3,
         label: "проверка"
     });
+});
+
+// Свои картинки для бросков: добавить (можно несколько сразу) и удалить.
+ipcMain.handle("veado-add-throw-items", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        title: "Картинки предметов для бросков",
+        properties: ["openFile", "multiSelections"],
+        filters: [{ name: "Картинки", extensions: ["png", "gif", "webp", "jpg", "jpeg"] }]
+    });
+    if (result.canceled || !result.filePaths?.length) return { success: false, canceled: true };
+    const added = result.filePaths
+        .filter((file) => !veadoSettings.customItems.some((item) => item.path === file))
+        .map((file) => ({ id: crypto.randomUUID(), name: path.parse(file).name, path: file }));
+    veadoSettings = normalizeVeadoSettings({ ...veadoSettings, customItems: [...veadoSettings.customItems, ...added] });
+    saveJsonFile(veadoSettingsFile, veadoSettings);
+    sendVeadoStatus();
+    return { success: true, status: getVeadoStatus() };
+});
+
+ipcMain.handle("veado-remove-throw-item", (_event, id) => {
+    const key = `custom:${id}`;
+    veadoSettings = normalizeVeadoSettings({
+        ...veadoSettings,
+        customItems: veadoSettings.customItems.filter((item) => item.id !== id),
+        // Реакции, которые бросали эту картинку, теперь бросают случайный предмет.
+        rules: veadoSettings.rules.map((rule) => (rule.throwItem === key ? { ...rule, throwItem: "random" } : rule))
+    });
+    saveJsonFile(veadoSettingsFile, veadoSettings);
+    sendVeadoStatus();
+    return { success: true, status: getVeadoStatus() };
 });
 
 ipcMain.handle("veado-pick-hand-image", async () => {

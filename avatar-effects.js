@@ -2,13 +2,15 @@
    AVATAR EFFECTS (OBS)
    Анимирует источник аватара в текущей сцене OBS без новых артов
    аватара: тряска, прыжки, вращение, масштаб — и эффекты с рукой
-   (погладить по голове, утащить за кадр). Рука — отдельный источник-
-   картинка в сцене, оверлей создаёт его сам и прячет после эффекта.
+   (погладить по голове, утащить за кадр), и брошенный в аватара предмет.
+   Рука и предмет — отдельные источники-картинки в сцене, оверлей создаёт
+   их сам и прячет после эффекта.
    После эффекта положение, поворот и масштаб аватара возвращаются как были.
 ========================= */
 
 const FRAME_MS = 33;
 const HAND_INPUT_NAME = "Twitch Overlay — рука";
+const ITEM_INPUT_NAME = "Twitch Overlay — предмет";
 // Фильтр цвета из прошлой версии: убираем его с аватара, если остался.
 const LEGACY_COLOR_FILTER = "Twitch Overlay — цвет";
 
@@ -24,7 +26,9 @@ const EFFECTS = {
     // Сторона случайная: влево, вправо, вверх или вниз.
     // Минимум покрывает самый длинный вариант: рывок до 1,5 с и возвращение
     // снизу с выглядыванием головы (2,4 с).
-    drag: { label: "Утащить за кадр", hand: true, minSec: 5 }
+    drag: { label: "Утащить за кадр", hand: true, minSec: 5 },
+    // Предмет прилетает сбоку по дуге, попадает в голову и отскакивает вниз.
+    throw: { label: "Бросить предмет", item: true, minSec: 2 }
 };
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -71,6 +75,8 @@ function frameAt(effect, t, T, ctx) {
             return patFrame(t, T, ctx);
         case "drag":
             return dragFrame(t, T, ctx);
+        case "throw":
+            return throwFrame(t, T, ctx);
         default:
             return { avatar: NO_MOVE };
     }
@@ -296,6 +302,81 @@ function dragFrame(t, T, ctx) {
     };
 }
 
+/* ---------- бросок предмета ---------- */
+
+const THROW_FLY = 0.6;
+const THROW_GRAVITY = 2600;
+
+// Случайные параметры одного броска: откуда летит, как высоко и куда попадает.
+function randomThrow() {
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    return {
+        side: Math.random() < 0.5 ? -1 : 1,
+        startY: rnd(0.2, 0.55),
+        arc: rnd(0.12, 0.28),
+        spin: Math.random() < 0.5 ? -1 : 1,
+        hitX: rnd(-0.08, 0.08),
+        bounce: rnd(220, 380)
+    };
+}
+
+/**
+ * Бросок: предмет вылетает из-за края экрана, летит по дуге с вращением,
+ * попадает аватару в голову, сплющивается от удара и отскакивает вниз
+ * за кадр. Аватара от удара отбрасывает и покачивает.
+ */
+function throwFrame(t, T, ctx) {
+    const { box, cx, cy, canvas, item } = ctx;
+    const p = ctx.throwParams;
+    const sx = p.side < 0 ? -item.w : canvas.w + item.w;
+    const sy = canvas.h * p.startY;
+    const px = cx + box.w * p.hitX;
+    const py = cy - box.h / 2 + box.h * (ctx.headOffset + 0.15);
+    const push = Math.sign(px - sx) || 1;
+    const arcH = canvas.h * p.arc;
+
+    if (t < THROW_FLY) {
+        const u = t / THROW_FLY;
+        return {
+            avatar: NO_MOVE,
+            item: {
+                x: lerp(sx, px, u),
+                y: lerp(sy, py, u) - arcH * 4 * u * (1 - u),
+                rot: p.spin * 540 * u,
+                sx: 1,
+                sy: 1
+            }
+        };
+    }
+
+    const s = t - THROW_FLY;
+    // Удар: резкий толчок и затухающее покачивание.
+    const hit = (1 - Math.exp(-30 * s)) * Math.exp(-3.5 * s);
+    const jitter = 3 * Math.sin(s * 40) * Math.exp(-6 * s);
+    const avatar = {
+        dx: push * box.w * 0.09 * hit + jitter,
+        dy: -box.h * 0.02 * hit,
+        rot: push * 12 * hit,
+        k: 1 - 0.07 * Math.exp(-9 * s)
+    };
+
+    // Предмет отскакивает назад и вверх, затем падает под действием тяжести.
+    const ix = px - push * p.bounce * s;
+    const iy = py - 520 * s + 0.5 * THROW_GRAVITY * s * s;
+    if (iy - item.h / 2 > canvas.h) return { avatar, item: null };
+    const squash = s < 0.1 ? 1 - s / 0.1 : 0;
+    return {
+        avatar,
+        item: {
+            x: ix,
+            y: iy,
+            rot: p.spin * (540 + 400 * s),
+            sx: 1 + 0.3 * squash,
+            sy: 1 - 0.3 * squash
+        }
+    };
+}
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 class AvatarEffects {
@@ -313,7 +394,7 @@ class AvatarEffects {
     }
 
     static list() {
-        return Object.entries(EFFECTS).map(([id, e]) => ({ id, label: e.label, hand: Boolean(e.hand) }));
+        return Object.entries(EFFECTS).map(([id, e]) => ({ id, label: e.label, hand: Boolean(e.hand), item: Boolean(e.item) }));
     }
 
     async getProgramSceneName() {
@@ -328,7 +409,7 @@ class AvatarEffects {
         return {
             sceneName,
             sources: (data.sceneItems || [])
-                .filter((item) => item.sourceName !== HAND_INPUT_NAME)
+                .filter((item) => item.sourceName !== HAND_INPUT_NAME && item.sourceName !== ITEM_INPUT_NAME)
                 .map((item) => ({ name: item.sourceName, kind: item.inputKind || (item.isGroup ? "group" : "scene") }))
                 .reverse()
         };
@@ -356,6 +437,7 @@ class AvatarEffects {
      * options.handImage — абсолютный путь к PNG руки (для эффектов с рукой).
      * options.headOffset — где голова: доля высоты аватара от верхнего края.
      * options.feetOffset — где ноги: доля высоты аватара от нижнего края.
+     * options.itemImage — абсолютный путь к картинке брошенного предмета.
      */
     async play(effect, durationMs, sourceName, options = {}) {
         const spec = EFFECTS[effect];
@@ -363,6 +445,7 @@ class AvatarEffects {
         if (!sourceName) return { success: false, error: "Не выбран источник аватара в OBS" };
         if (!this.obs.connected) return { success: false, error: "OBS не подключён" };
         if (spec.hand && !options.handImage) return { success: false, error: "Нет картинки руки" };
+        if (spec.item && !options.itemImage) return { success: false, error: "Нет картинки предмета" };
 
         try {
             await this.removeLegacyColorFilter(sourceName);
@@ -374,55 +457,58 @@ class AvatarEffects {
         }
     }
 
-    /* ---------- рука ---------- */
+    /* ---------- рука и предмет ---------- */
 
-    // Создаёт (или находит) источник руки в сцене, выше аватара, и скрывает его.
-    async prepareHand(sceneName, avatarItemId, handImage) {
-        let exists = true;
+    /**
+     * Создаёт (или находит) источник-картинку inputName в сцене, выше аватара,
+     * ставит ему файл file и скрывает. Возвращает id элемента сцены и размер картинки.
+     */
+    async prepareImageOverlay(sceneName, avatarItemId, inputName, file, what) {
+        let previousFile = null;
         try {
-            await this.obs.request("GetInputSettings", { inputName: HAND_INPUT_NAME });
+            const { inputSettings } = await this.obs.request("GetInputSettings", { inputName });
+            previousFile = inputSettings?.file ?? "";
         } catch {
-            exists = false;
+            previousFile = null;
         }
 
-        if (!exists) {
+        if (previousFile === null) {
             await this.obs.request("CreateInput", {
                 sceneName,
-                inputName: HAND_INPUT_NAME,
+                inputName,
                 inputKind: "image_source",
-                inputSettings: { file: handImage, unload: false },
+                inputSettings: { file, unload: false },
                 sceneItemEnabled: false
             });
-        } else {
-            await this.obs.request("SetInputSettings", {
-                inputName: HAND_INPUT_NAME,
-                inputSettings: { file: handImage, unload: false }
-            });
+        } else if (previousFile !== file) {
+            await this.obs.request("SetInputSettings", { inputName, inputSettings: { file, unload: false } });
         }
 
         let sceneItemId;
         try {
-            ({ sceneItemId } = await this.obs.request("GetSceneItemId", { sceneName, sourceName: HAND_INPUT_NAME }));
+            ({ sceneItemId } = await this.obs.request("GetSceneItemId", { sceneName, sourceName: inputName }));
         } catch {
-            // Источник руки уже есть, но в другой сцене — добавляем его и сюда.
+            // Источник уже есть, но в другой сцене — добавляем его и сюда.
             ({ sceneItemId } = await this.obs.request("CreateSceneItem", {
                 sceneName,
-                sourceName: HAND_INPUT_NAME,
+                sourceName: inputName,
                 sceneItemEnabled: false
             }));
         }
         await this.obs.request("SetSceneItemEnabled", { sceneName, sceneItemId, sceneItemEnabled: false });
 
-        // Рука должна быть поверх аватара.
-        const [{ sceneItemIndex: avatarIndex }, { sceneItemIndex: handIndex }] = await Promise.all([
+        // Картинка должна быть поверх аватара.
+        const [{ sceneItemIndex: avatarIndex }, { sceneItemIndex: ownIndex }] = await Promise.all([
             this.obs.request("GetSceneItemIndex", { sceneName, sceneItemId: avatarItemId }),
             this.obs.request("GetSceneItemIndex", { sceneName, sceneItemId })
         ]);
-        if (handIndex < avatarIndex) {
+        if (ownIndex < avatarIndex) {
             await this.obs.request("SetSceneItemIndex", { sceneName, sceneItemId, sceneItemIndex: avatarIndex });
         }
 
         // Картинка грузится асинхронно — ждём, пока OBS узнает её размер.
+        // Если файл сменили, даём OBS время перечитать его, иначе размер будет от старого.
+        if (previousFile !== null && previousFile !== file) await delay(250);
         let size = null;
         for (let i = 0; i < 20; i++) {
             const { sceneItemTransform: tr } = await this.obs.request("GetSceneItemTransform", { sceneName, sceneItemId });
@@ -432,7 +518,7 @@ class AvatarEffects {
             }
             await delay(100);
         }
-        if (!size) throw new Error("OBS не смог загрузить картинку руки");
+        if (!size) throw new Error(`OBS не смог загрузить картинку ${what}`);
 
         // Отключаем границы, чтобы масштаб руки управлялся напрямую.
         await this.obs.request("SetSceneItemTransform", {
@@ -489,25 +575,34 @@ class AvatarEffects {
             // Куда наклонена рука при поглаживании; сторона «Утащить» — случайная.
             dir: cx > canvas.w / 2 ? -1 : 1,
             dragWay: effect === "drag" ? (options.dragWay || this.pickDragWay()) : null,
+            throwParams: effect === "throw" ? { ...randomThrow(), ...(options.throwParams || {}) } : null,
             headOffset: Math.max(0, Math.min(0.6, Number(options.headOffset ?? 0.1) || 0)),
             feetOffset: Math.max(0, Math.min(0.6, Number(options.feetOffset ?? 0.04) || 0)),
-            hand: { w: 0, h: 0 }
+            hand: { w: 0, h: 0 },
+            item: { w: 0, h: 0 }
         };
 
-        let handItem = null;
-        let handScale = 1;
-        let handVisible = false;
+        // Картинки поверх аватара: рука и брошенный предмет.
+        const overlays = {};
         if (spec.hand) {
-            handItem = await this.prepareHand(sceneName, sceneItemId, options.handImage);
-            // Ширина руки — около 45% ширины аватара.
-            handScale = (box.w * 0.45) / handItem.size.w;
-            ctx.hand = { w: handItem.size.w * handScale, h: handItem.size.h * handScale };
+            const prepared = await this.prepareImageOverlay(sceneName, sceneItemId, HAND_INPUT_NAME, options.handImage, "руки");
+            // Ширина руки — около 45% ширины аватара; зеркалим её по стороне.
+            const scale = (box.w * 0.45) / prepared.size.w;
+            ctx.hand = { w: prepared.size.w * scale, h: prepared.size.h * scale };
+            overlays.hand = { ...prepared, scale, mirror: ctx.dir > 0 ? 1 : -1, visible: false };
+        }
+        if (spec.item) {
+            const prepared = await this.prepareImageOverlay(sceneName, sceneItemId, ITEM_INPUT_NAME, options.itemImage, "предмета");
+            // Предмет — около трети ширины аватара по большей стороне.
+            const scale = (box.w * 0.32) / Math.max(prepared.size.w, prepared.size.h);
+            ctx.item = { w: prepared.size.w * scale, h: prepared.size.h * scale };
+            overlays.item = { ...prepared, scale, mirror: 1, visible: false };
         }
 
-        const setHandVisible = (visible) => {
-            if (!handItem || visible === handVisible) return;
-            handVisible = visible;
-            this.obs.fire("SetSceneItemEnabled", { sceneName, sceneItemId: handItem.sceneItemId, sceneItemEnabled: visible });
+        const setOverlayVisible = (overlay, visible) => {
+            if (visible === overlay.visible) return;
+            overlay.visible = visible;
+            this.obs.fire("SetSceneItemEnabled", { sceneName, sceneItemId: overlay.sceneItemId, sceneItemEnabled: visible });
         };
 
         const started = Date.now();
@@ -533,24 +628,25 @@ class AvatarEffects {
                 }
                 this.obs.fire("SetSceneItemTransform", { sceneName, sceneItemId, sceneItemTransform: next });
 
-                if (handItem) {
-                    if (frame.hand) {
-                        // Сначала ставим руку на место, потом показываем — без мигания.
+                for (const [key, overlay] of Object.entries(overlays)) {
+                    const pose = frame[key];
+                    if (pose) {
+                        // Сначала ставим картинку на место, потом показываем — без мигания.
                         this.obs.fire("SetSceneItemTransform", {
                             sceneName,
-                            sceneItemId: handItem.sceneItemId,
+                            sceneItemId: overlay.sceneItemId,
                             sceneItemTransform: {
                                 alignment: 0,
-                                positionX: frame.hand.x,
-                                positionY: frame.hand.y,
-                                rotation: frame.hand.rot,
-                                scaleX: handScale * (ctx.dir > 0 ? 1 : -1),
-                                scaleY: handScale
+                                positionX: pose.x,
+                                positionY: pose.y,
+                                rotation: pose.rot,
+                                scaleX: overlay.scale * overlay.mirror * (pose.sx ?? 1),
+                                scaleY: overlay.scale * (pose.sy ?? 1)
                             }
                         });
-                        setHandVisible(true);
+                        setOverlayVisible(overlay, true);
                     } else {
-                        setHandVisible(false);
+                        setOverlayVisible(overlay, false);
                     }
                 }
 
@@ -558,9 +654,9 @@ class AvatarEffects {
             }
         } finally {
             if (this.obs.connected) {
-                if (handItem) {
-                    await this.obs.request("SetSceneItemEnabled", { sceneName, sceneItemId: handItem.sceneItemId, sceneItemEnabled: false })
-                        .catch((error) => console.error("OBS: не удалось спрятать руку:", error.message));
+                for (const overlay of Object.values(overlays)) {
+                    await this.obs.request("SetSceneItemEnabled", { sceneName, sceneItemId: overlay.sceneItemId, sceneItemEnabled: false })
+                        .catch((error) => console.error("OBS: не удалось спрятать картинку эффекта:", error.message));
                 }
                 await this.obs.request("SetSceneItemTransform", { sceneName, sceneItemId, sceneItemTransform: original })
                     .catch((error) => console.error("OBS: не удалось вернуть положение аватара:", error.message));
@@ -569,4 +665,4 @@ class AvatarEffects {
     }
 }
 
-module.exports = { AvatarEffects, EFFECTS, HAND_INPUT_NAME };
+module.exports = { AvatarEffects, EFFECTS, HAND_INPUT_NAME, ITEM_INPUT_NAME };

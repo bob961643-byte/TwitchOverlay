@@ -565,6 +565,45 @@ body.theme-light .nav-item { color:#4d5360; }
     min-width: 0;
 }
 
+.veado-effect-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.veado-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 16px 14px;
+}
+
+.veado-item-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--input);
+    color: var(--text);
+    font-size: 13px;
+}
+
+.veado-item-chip button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0 4px;
+    font-size: 13px;
+}
+
+.veado-item-chip button:hover {
+    color: var(--text);
+}
+
 .veado-duration {
     display: flex;
     align-items: center;
@@ -1562,6 +1601,18 @@ copyObsBrowserSourceUrl?.addEventListener("click", async () => {
             <span class="setting-description" id="veadoFeetOffsetValue">4%</span>
         </div>
     </div>
+</div>
+
+<div class="section">
+    <div class="section-title">Предметы для бросков</div>
+    <div class="setting-row">
+        <div>
+            <div class="setting-label">Что можно бросить в аватара</div>
+            <div class="setting-description">Помидор, мяч, тапок, рыбка, подушка и сердечко уже есть. Добавьте свои картинки — лучше PNG с прозрачным фоном. Предмет выбирается в реакции с эффектом «Бросить предмет»</div>
+        </div>
+        <button class="small-button" id="veadoAddThrowItems">Добавить картинки…</button>
+    </div>
+    <div class="veado-items" id="veadoThrowItems"></div>
 </div>
 
 <div class="section">
@@ -3264,6 +3315,48 @@ if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(ap
         });
     }
 
+    /* ---------- предметы для бросков ---------- */
+    const throwItemsEl = el("veadoThrowItems");
+    const addThrowItemsEl = el("veadoAddThrowItems");
+
+    function renderThrowItems() {
+        if (!throwItemsEl) return;
+        throwItemsEl.textContent = "";
+        (status?.throwItems || [])
+            .filter((item) => item.id !== "random")
+            .forEach((item) => {
+                const chip = document.createElement("span");
+                chip.className = "veado-item-chip";
+                chip.append(document.createTextNode(item.label));
+                if (item.custom) {
+                    const remove = document.createElement("button");
+                    remove.textContent = "✕";
+                    remove.title = "Убрать картинку";
+                    remove.addEventListener("click", async () => {
+                        const result = await api.removeVeadoThrowItem(item.id.slice("custom:".length));
+                        if (result?.success) applyServerItems(result.status);
+                    });
+                    chip.append(remove);
+                }
+                throwItemsEl.append(chip);
+            });
+    }
+
+    // Свои картинки меняет main.js — берём оттуда список и реакции.
+    function applyServerItems(next) {
+        settings.customItems = next.settings.customItems;
+        settings.rules.forEach((rule) => {
+            const fresh = next.settings.rules.find((r) => r.id === rule.id);
+            if (fresh) rule.throwItem = fresh.throwItem;
+        });
+        renderStatus(next);
+    }
+
+    addThrowItemsEl?.addEventListener("click", async () => {
+        const result = await api.addVeadoThrowItems();
+        if (result?.success) applyServerItems(result.status);
+    });
+
     pickHandEl?.addEventListener("click", async () => {
         const result = await api.pickVeadoHandImage();
         if (result?.success) {
@@ -3359,6 +3452,7 @@ if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(ap
         }
         renderObsSources();
         renderHandSettings();
+        renderThrowItems();
 
         const states = v.states || [];
         statesListEl.textContent = states.length
@@ -3446,11 +3540,33 @@ if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(ap
                 });
             }
 
+            // Ячейка эффекта: сам эффект и, для броска, выбор предмета под ним.
+            const effectCell = document.createElement("div");
+            effectCell.className = "veado-effect-cell";
             const effect = document.createElement("select");
             effect.className = "select";
             effect.append(option("", "Без эффекта OBS", !rule.effect));
             (status?.effects || []).forEach((e) => effect.append(option(e.id, e.label, e.id === rule.effect)));
-            effect.addEventListener("change", () => { rule.effect = effect.value; scheduleSave(); });
+            effect.addEventListener("change", () => {
+                rule.effect = effect.value;
+                if (!rule.throwItem) rule.throwItem = "random";
+                scheduleSave();
+                renderRules();
+            });
+            effectCell.append(effect);
+
+            const effectSpec = (status?.effects || []).find((e) => e.id === rule.effect);
+            if (effectSpec?.item) {
+                const itemSelect = document.createElement("select");
+                itemSelect.className = "select";
+                itemSelect.title = "Что бросить";
+                const items = status?.throwItems || [{ id: "random", label: "Случайный предмет" }];
+                const current = rule.throwItem || "random";
+                if (!items.some((i) => i.id === current)) itemSelect.append(option(current, "Удалённая картинка", true));
+                items.forEach((i) => itemSelect.append(option(i.id, i.custom ? `${i.label} (своя)` : i.label, i.id === current)));
+                itemSelect.addEventListener("change", () => { rule.throwItem = itemSelect.value; scheduleSave(); });
+                effectCell.append(itemSelect);
+            }
 
             const state = document.createElement("select");
             state.className = "select";
@@ -3479,7 +3595,7 @@ if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(ap
             test.className = "small-button";
             test.textContent = "Проверить";
             test.addEventListener("click", async () => {
-                const result = await api.testVeadoReaction(rule.state, rule.effect, rule.durationSec);
+                const result = await api.testVeadoReaction(rule.state, rule.effect, rule.durationSec, rule.throwItem);
                 if (!result?.success) window.showToast?.(result?.error || "Не удалось запустить реакцию");
             });
 
@@ -3493,7 +3609,7 @@ if(window.electronAPI?.onOverlaySettings)window.electronAPI.onOverlaySettings(ap
                 renderRules();
             });
 
-            row.append(type, target, effect, state, durationWrap, test, remove);
+            row.append(type, target, effectCell, state, durationWrap, test, remove);
             rulesEl.append(row);
         });
     }
