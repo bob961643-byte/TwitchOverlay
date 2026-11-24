@@ -21,7 +21,8 @@ const EFFECTS = {
     grow: { label: "Раздуться" },
     shrink: { label: "Сжаться" },
     pat: { label: "Погладить по голове", hand: true, minSec: 1.6 },
-    // Минимум покрывает самый длинный путь через весь экран (рывок 1,5 с + пробежка 2 с).
+    // Сторона случайная: влево, вправо, вверх или вниз.
+    // Минимум покрывает самый длинный путь (рывок 1,5 с + возвращение 2 с).
     drag: { label: "Утащить за кадр", hand: true, minSec: 4.5 }
 };
 
@@ -122,17 +123,65 @@ function patFrame(t, T, ctx) {
     };
 }
 
-// Утащить: рука хватает за голову, тащит аватара за дальний край экрана,
-// аватар какое-то время отсутствует и прибегает обратно вприпрыжку.
-function dragFrame(t, T, ctx) {
-    const { hand, box, cx, canvas, dir } = ctx;
-    const a = handAnchors(ctx);
-    // Насколько сдвинуть аватар, чтобы он целиком ушёл за край вместе с рукой.
-    const reach = Math.max(box.w, box.h) * 0.75 + hand.w;
-    const distance = dir > 0 ? canvas.w - cx + reach : cx + reach;
-    const lift = -box.h * 0.1;
+// Точка, где рука снизу (пальцами вверх) держит ноги, и точка за нижним краем.
+function feetAnchors(ctx) {
+    const { box, cx, cy, hand, canvas } = ctx;
+    const feetY = cy + box.h / 2 - box.h * 0.04;
+    return {
+        restX: cx,
+        // Кончики пальцев заходят на ноги на 18% высоты руки.
+        restY: feetY - hand.h * 0.18 + hand.h / 2,
+        offY: canvas.h + hand.h * 0.7
+    };
+}
 
-    // Чем дальше тащить, тем дольше рывок и обратная пробежка.
+const DRAG_WAYS = ["left", "right", "up", "down"];
+
+const easeOutBack = (v) => {
+    const c = 1.6;
+    return 1 + (c + 1) * Math.pow(v - 1, 3) + c * Math.pow(v - 1, 2);
+};
+const bounceOut = (v) => {
+    const n = 7.5625;
+    const d = 2.75;
+    if (v < 1 / d) return n * v * v;
+    if (v < 2 / d) return n * (v -= 1.5 / d) * v + 0.75;
+    if (v < 2.5 / d) return n * (v -= 2.25 / d) * v + 0.9375;
+    return n * (v -= 2.625 / d) * v + 0.984375;
+};
+
+/**
+ * Утащить: рука хватает аватара и утаскивает за край экрана в сторону
+ * ctx.dragWay (влево, вправо, вверх или вниз). Влево/вправо/вверх — рука
+ * сверху держит за голову; вниз — рука снизу держит за ноги.
+ * Затем аватар возвращается: прибегает вприпрыжку, падает сверху
+ * или выпрыгивает снизу.
+ */
+function dragFrame(t, T, ctx) {
+    const { hand, box, cx, cy, canvas } = ctx;
+    const way = ctx.dragWay || "right";
+    const fromBelow = way === "down";
+    const a = fromBelow ? feetAnchors(ctx) : handAnchors(ctx);
+    const vx = way === "right" ? 1 : way === "left" ? -1 : 0;
+    const vy = way === "down" ? 1 : way === "up" ? -1 : 0;
+
+    // Насколько сдвинуть аватар, чтобы он целиком ушёл за край вместе с рукой.
+    const reach = Math.max(box.w, box.h) * 0.75 + Math.max(hand.w, hand.h);
+    const distance =
+        way === "right" ? canvas.w - cx + reach :
+        way === "left" ? cx + reach :
+        way === "up" ? cy + reach :
+        canvas.h - cy + reach;
+
+    // Схватили: сверху аватара приподнимают, снизу — прижимают вниз.
+    const lift = fromBelow ? box.h * 0.06 : -box.h * 0.1;
+    // Рука снизу перевёрнута пальцами вверх; сжатие — в сторону аватара.
+    const handBase = fromBelow ? 180 : 0;
+    const squeeze = (fromBelow ? -1 : 1) * hand.h * 0.04;
+    // Наклон: вбок — туда, куда тащат; вверх/вниз — аватар болтается.
+    const tiltSide = vx || ctx.dir;
+
+    // Чем дальше тащить, тем дольше рывок и возвращение.
     const tIn = 0.45;
     const tGrab = 0.3;
     const tPull = Math.max(0.9, Math.min(1.5, distance / 1400));
@@ -145,40 +194,63 @@ function dragFrame(t, T, ctx) {
 
     if (t < t1) {
         const u = easeOut(clamp01(t / tIn));
-        return { avatar: NO_MOVE, hand: { x: a.restX, y: lerp(a.offY, a.restY, u), rot: 0 } };
+        return { avatar: NO_MOVE, hand: { x: a.restX, y: lerp(a.offY, a.restY, u), rot: handBase } };
     }
     if (t < t2) {
-        // Хватает: рука сжимает, аватар чуть приподнимается и клонится в сторону рывка.
         const u = easeInOut(clamp01((t - t1) / tGrab));
+        const tilt = vx ? 6 * vx * u : 0;
         return {
-            avatar: { dx: 0, dy: lift * u, rot: 6 * dir * u, k: 1 - 0.04 * u },
-            hand: { x: a.restX, y: a.restY + (lift + hand.h * 0.04) * u, rot: 10 * dir * u }
+            avatar: { dx: 0, dy: lift * u, rot: tilt, k: 1 - 0.04 * u },
+            hand: { x: a.restX, y: a.restY + (lift + squeeze) * u, rot: handBase + (vx ? 10 * vx * u : 0) }
         };
     }
     if (t < t3) {
-        // Тащат за голову: верх аватара наклонён туда, куда его уносят.
         const u = easeIn(clamp01((t - t2) / tPull));
-        const dx = dir * distance * u;
-        const dy = lift - box.h * 0.04 * Math.sin(u * Math.PI);
-        const swing = 6 * dir + 10 * dir * Math.min(1, u * 3);
+        const d = distance * u;
+        const dx = vx * d;
+        const dy = lift + vy * d - (vx ? box.h * 0.04 * Math.sin(u * Math.PI) : 0);
+        // Вбок: верх аватара наклонён туда, куда его уносят; вверх/вниз — раскачивается.
+        const rot = vx
+            ? 6 * vx + 10 * vx * Math.min(1, u * 3)
+            : 7 * tiltSide * Math.sin((t - t2) * 13) * Math.min(1, u * 4);
         return {
-            avatar: { dx, dy, rot: swing, k: 0.96 },
-            hand: { x: a.restX + dx, y: a.restY + dy + hand.h * 0.04, rot: 10 * dir }
+            avatar: { dx, dy, rot, k: 0.96 },
+            hand: { x: a.restX + dx, y: a.restY + dy + squeeze, rot: handBase + (vx ? 10 * vx : rot * 0.4) }
         };
     }
     if (t < t4) {
-        return { avatar: { dx: dir * distance, dy: 0, rot: 0, k: 1 }, hand: null };
+        return { avatar: { dx: vx * distance, dy: vy * distance, rot: 0, k: 1 }, hand: null };
     }
+
     const u = clamp01((t - t4) / tBack);
-    const run = easeOut(u);
-    const hops = Math.abs(Math.sin(Math.PI * u * 5));
+    if (vx) {
+        // Прибегает вприпрыжку с той стороны, куда утащили.
+        const run = easeOut(u);
+        const hops = Math.abs(Math.sin(Math.PI * u * 5));
+        return {
+            avatar: {
+                dx: vx * distance * (1 - run),
+                dy: -box.h * 0.07 * hops * (1 - u * 0.6),
+                rot: -vx * 6 * Math.sin(Math.PI * u * 10) * (1 - u),
+                k: 1
+            },
+            hand: null
+        };
+    }
+    if (way === "up") {
+        // Падает сверху и пару раз подскакивает при приземлении.
+        const fall = bounceOut(u);
+        // Последний подскок плавно гасим, чтобы в конце не было рывка на место.
+        const settle = 1 - easeInOut(clamp01((u - 0.85) / 0.15));
+        return {
+            avatar: { dx: 0, dy: -distance * (1 - fall) * settle, rot: 4 * tiltSide * Math.sin(u * 12) * (1 - u), k: 1 },
+            hand: null
+        };
+    }
+    // Выпрыгивает снизу, чуть перелетает своё место и опускается обратно.
+    const jump = easeOutBack(u);
     return {
-        avatar: {
-            dx: dir * distance * (1 - run),
-            dy: -box.h * 0.07 * hops * (1 - u * 0.6),
-            rot: -dir * 6 * Math.sin(Math.PI * u * 10) * (1 - u),
-            k: 1
-        },
+        avatar: { dx: 0, dy: distance * (1 - jump), rot: 5 * tiltSide * Math.sin(u * 9) * (1 - u), k: 1 },
         hand: null
     };
 }
@@ -189,6 +261,14 @@ class AvatarEffects {
     constructor({ obs }) {
         this.obs = obs;
         this.cleanedSources = new Set();
+        this.lastDragWay = null;
+    }
+
+    // Случайная сторона для «Утащить», не повторяя прошлую подряд.
+    pickDragWay() {
+        const options = DRAG_WAYS.filter((way) => way !== this.lastDragWay);
+        this.lastDragWay = options[Math.floor(Math.random() * options.length)];
+        return this.lastDragWay;
     }
 
     static list() {
@@ -364,8 +444,9 @@ class AvatarEffects {
             cx,
             cy,
             canvas,
-            // Тащим к дальнему краю — через весь экран; туда же наклонена рука.
+            // Куда наклонена рука при поглаживании; сторона «Утащить» — случайная.
             dir: cx > canvas.w / 2 ? -1 : 1,
+            dragWay: effect === "drag" ? (options.dragWay || this.pickDragWay()) : null,
             headOffset: Math.max(0, Math.min(0.6, Number(options.headOffset) || 0.1)),
             hand: { w: 0, h: 0 }
         };
