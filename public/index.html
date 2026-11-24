@@ -2389,9 +2389,7 @@ if (window.electronAPI?.onUpdateCheckResult) {
                 manualCheckUpdatesButton.textContent = "Проверить обновление";
             }
 
-            if (result.status === "disabled") {
-                window.showToast(result.message || "Автообновление отключено в этой сборке.");
-            } else if (result.status === "cancelled") {
+            if (result.status === "cancelled") {
                 window.showToast("Загрузка обновления отменена.");
             } else if (result.status === "up-to-date") {
                 window.showToast("Обновлений нет — используется последняя версия.");

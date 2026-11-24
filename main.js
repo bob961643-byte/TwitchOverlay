@@ -21,12 +21,6 @@ const { Server: SocketIOServer } = require("socket.io");
 // confirms the update in the UI.
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = false;
-
-// Локальная сборка с реакциями veadotube и эффектами OBS: версии на GitHub
-// этих функций не содержат, поэтому обновление оттуда их бы удалило.
-const AUTO_UPDATE_ENABLED = false;
-const AUTO_UPDATE_DISABLED_MESSAGE =
-    "Автообновление отключено: это локальная сборка с вашими функциями, версия с GitHub их бы удалила.";
 let updateInstallScheduled = false;
 let updateCheckInProgress = false;
 let updateDownloadInProgress = false;
@@ -1128,18 +1122,6 @@ function sendUpdateCheckResult(result) {
 }
 
 async function checkForUpdates(force = false) {
-    if (!AUTO_UPDATE_ENABLED) {
-        console.log("AutoUpdater: отключено в этой сборке");
-        if (force) {
-            sendUpdateCheckResult({
-                status: "disabled",
-                currentVersion: app.getVersion(),
-                message: AUTO_UPDATE_DISABLED_MESSAGE
-            });
-        }
-        return null;
-    }
-
     if (!app.isPackaged) {
         console.log("AutoUpdater: development mode, skipped");
         if (force) {
@@ -2925,15 +2907,6 @@ ipcMain.on(
 );
 
 ipcMain.on("general-download-update", async () => {
-    if (!AUTO_UPDATE_ENABLED) {
-        sendUpdateCheckResult({
-            status: "disabled",
-            currentVersion: app.getVersion(),
-            message: AUTO_UPDATE_DISABLED_MESSAGE
-        });
-        return;
-    }
-
     if (!app.isPackaged) {
         sendUpdateCheckResult({
             status: "unavailable",
