@@ -283,6 +283,20 @@ onOverlaySettings: (callback) => {
     connectObs: () => ipcRenderer.invoke("obs-connect"),
     disconnectObs: () => ipcRenderer.invoke("obs-disconnect"),
     onObsStatus: (callback) => ipcRenderer.on("obs-status", (event, status) => callback(status)),
+    listObsSources: () => ipcRenderer.invoke("obs-list-sources"),
+
+    /* =========================
+       VEADOTUBE MINI
+    ========================= */
+    getVeadoStatus: () => ipcRenderer.invoke("veado-get-status"),
+    setVeadoSettings: (settings) => ipcRenderer.invoke("veado-set-settings", settings),
+    refreshVeadoStates: () => ipcRenderer.invoke("veado-refresh-states"),
+    testVeadoReaction: (state, effect, durationSec, throwItem) => ipcRenderer.invoke("veado-test", { state, effect, durationSec, throwItem }),
+    addVeadoThrowItems: () => ipcRenderer.invoke("veado-add-throw-items"),
+    removeVeadoThrowItem: (id) => ipcRenderer.invoke("veado-remove-throw-item", id),
+    getVeadoRewards: () => ipcRenderer.invoke("veado-get-rewards"),
+    pickVeadoHandImage: () => ipcRenderer.invoke("veado-pick-hand-image"),
+    onVeadoStatus: (callback) => ipcRenderer.on("veado-status", (event, status) => callback(status)),
 
     onThirdPartyEmotesLoaded: (callback) => {
         ipcRenderer.on("third-party-emotes-loaded", (event, data) => callback(data));
