@@ -22,8 +22,9 @@ const EFFECTS = {
     shrink: { label: "Сжаться" },
     pat: { label: "Погладить по голове", hand: true, minSec: 1.6 },
     // Сторона случайная: влево, вправо, вверх или вниз.
-    // Минимум покрывает самый длинный путь (рывок 1,5 с + возвращение 2 с).
-    drag: { label: "Утащить за кадр", hand: true, minSec: 4.5 }
+    // Минимум покрывает самый длинный вариант: рывок до 1,5 с и возвращение
+    // снизу с выглядыванием головы (2,4 с).
+    drag: { label: "Утащить за кадр", hand: true, minSec: 5 }
 };
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -185,7 +186,14 @@ function dragFrame(t, T, ctx) {
     const tIn = 0.45;
     const tGrab = 0.3;
     const tPull = Math.max(0.9, Math.min(1.5, distance / 1400));
-    const tBack = Math.max(1.3, Math.min(2.0, distance / 1100));
+    // Снизу кот сперва секунду выглядывает головой, поэтому возвращение дольше.
+    const PEEK_RISE = 0.4;
+    const PEEK_HOLD = 1.0;
+    const PEEK_DIP = 0.15;
+    const PEEK_JUMP = 0.85;
+    const tBack = fromBelow
+        ? PEEK_RISE + PEEK_HOLD + PEEK_DIP + PEEK_JUMP
+        : Math.max(1.3, Math.min(2.0, distance / 1100));
     const tAway = Math.max(0.2, T - tIn - tGrab - tPull - tBack);
     const t1 = tIn;
     const t2 = t1 + tGrab;
@@ -247,10 +255,39 @@ function dragFrame(t, T, ctx) {
             hand: null
         };
     }
-    // Выпрыгивает снизу, чуть перелетает своё место и опускается обратно.
-    const jump = easeOutBack(u);
+    // Снизу: сперва из-за нижнего края высовывается голова, кот секунду
+    // осматривается, приседает и выпрыгивает целиком на своё место.
+    const s = t - t4;
+    // Видна голова: отступ до головы плюс примерно четверть высоты аватара.
+    const peekShow = box.h * (ctx.headOffset + 0.28);
+    const topAtRest = cy - box.h / 2;
+    const peekDy = Math.max(0, canvas.h - peekShow - topAtRest);
+
+    if (s < PEEK_RISE) {
+        const v = easeOut(clamp01(s / PEEK_RISE));
+        return { avatar: { dx: 0, dy: lerp(distance, peekDy, v), rot: 0, k: 1 }, hand: null };
+    }
+    if (s < PEEK_RISE + PEEK_HOLD) {
+        // Осматривается: покачивает головой влево-вправо и чуть приподнимается.
+        const h = s - PEEK_RISE;
+        const look = Math.sin((h / PEEK_HOLD) * Math.PI * 2);
+        const fade = Math.sin((h / PEEK_HOLD) * Math.PI);
+        return {
+            avatar: { dx: 0, dy: peekDy - box.h * 0.03 * fade, rot: 7 * tiltSide * look * fade, k: 1 },
+            hand: null
+        };
+    }
+    if (s < PEEK_RISE + PEEK_HOLD + PEEK_DIP) {
+        // Приседает перед прыжком.
+        const v = easeInOut(clamp01((s - PEEK_RISE - PEEK_HOLD) / PEEK_DIP));
+        return { avatar: { dx: 0, dy: peekDy + box.h * 0.06 * v, rot: 0, k: 1 }, hand: null };
+    }
+    // Выпрыгивает, чуть перелетает своё место и опускается обратно.
+    const v = clamp01((s - PEEK_RISE - PEEK_HOLD - PEEK_DIP) / PEEK_JUMP);
+    const jump = easeOutBack(v);
+    const from = peekDy + box.h * 0.06;
     return {
-        avatar: { dx: 0, dy: distance * (1 - jump), rot: 5 * tiltSide * Math.sin(u * 9) * (1 - u), k: 1 },
+        avatar: { dx: 0, dy: from * (1 - jump), rot: 5 * tiltSide * Math.sin(v * 9) * (1 - v), k: 1 },
         hand: null
     };
 }
