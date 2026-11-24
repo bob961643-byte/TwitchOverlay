@@ -38,6 +38,9 @@ const easeOut = (v) => 1 - Math.pow(1 - v, 3);
 // Плавный вход и выход эффекта за edge секунд.
 const envelope = (t, T, edge) => easeInOut(clamp01(t / edge)) * easeInOut(clamp01((T - t) / edge));
 const lerp = (a, b, u) => a + (b - a) * u;
+// OBS WebSocket отклоняет поворот вне −360…360°, поэтому приводим угол
+// к 0…360 — на экране он выглядит так же.
+const obsAngle = (deg) => ((deg % 360) + 360) % 360;
 
 const NO_MOVE = { dx: 0, dy: 0, rot: 0, k: 1 };
 
@@ -617,7 +620,7 @@ class AvatarEffects {
                     alignment: 0,
                     positionX: cx + f.dx,
                     positionY: cy + f.dy,
-                    rotation: (tr.rotation || 0) + f.rot
+                    rotation: obsAngle((tr.rotation || 0) + f.rot)
                 };
                 if (usesBounds) {
                     next.boundsWidth = tr.boundsWidth * f.k;
@@ -639,7 +642,7 @@ class AvatarEffects {
                                 alignment: 0,
                                 positionX: pose.x,
                                 positionY: pose.y,
-                                rotation: pose.rot,
+                                rotation: obsAngle(pose.rot),
                                 scaleX: overlay.scale * overlay.mirror * (pose.sx ?? 1),
                                 scaleY: overlay.scale * (pose.sy ?? 1)
                             }
